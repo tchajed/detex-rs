@@ -1,0 +1,15 @@
+[package]
+name = "detex"
+version = "2.9.0"
+edition = "2021"
+description = "Strip TeX/LaTeX commands from input files"
+license = "BSD-3-Clause"
+repository = "https://github.com/pkubowicz/opendetex"
+keywords = ["tex", "latex", "text-processing"]
+categories = ["command-line-utilities", "text-processing"]
+
+[dependencies]
+
+[profile.release]
+lto = true
+strip = true
