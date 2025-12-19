@@ -1,31 +1,65 @@
 //! Lexer state machine for stripping TeX/LaTeX commands.
+//!
+//! This is a port of opendetex's detex.l flex lexer to Rust.
+//! Comments throughout reference line numbers in opendetex-2.8.11/detex.l.
+//!
+//! # Structure
+//!
+//! The original detex.l is a flex (lex) scanner with:
+//! - Pattern definitions (lines 192-204)
+//! - State declarations (lines 206-209)
+//! - Pattern-action rules (lines 211-514)
+//! - Support functions (lines 517-1132)
+//!
+//! This Rust port uses a state machine approach where:
+//! - Each flex state becomes a State enum variant
+//! - Each state has a process_* method that handles its patterns
+//! - Pattern matching is done manually using character-by-character processing
+//!
+//! # Correspondence to detex.l
+//!
+//! - detex.l:96-111: Macro definitions → Helper methods like noun(), verb_noun(), etc.
+//! - detex.l:192-204: Pattern definitions → Handled inline in the processing methods
+//! - detex.l:206-209: State declarations → State enum (lines 23-42)
+//! - detex.l:212-485: Normal state rules → process_normal() and process_backslash()
+//! - detex.l:487-514: Other state rules → process_la_macro(), process_math(), etc.
 
 use std::io::{Read, Write};
 
 use crate::config::{Options, MAX_FILE_STACK};
 use crate::file_handler::{in_include_list, tex_open, CharSource};
 
-/// Lexer states matching the original flex states
+/// Lexer states matching the original flex states.
+/// See detex.l lines 206-209:
+/// ```text
+/// %Start Define Display IncludeOnly Input Math Normal Control
+/// %Start LaBegin LaDisplay LaEnd LaEnv LaFormula LaInclude LaSubfile
+/// %Start LaMacro LaOptArg LaMacro2 LaOptArg2 LaVerbatim
+/// %start LaBreak LaPicture
+/// ```
+/// Note: LaBegin is handled inline in process_backslash for \begin.
+/// LaSubfile uses the same logic as LaInclude.
+/// LaBreak is unused (commented out in detex.l).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Normal,
-    Define,
-    Display,
-    IncludeOnly,
-    Input,
-    Math,
-    Control,
-    LaDisplay,
-    LaEnd,
-    LaEnv,
-    LaFormula,
-    LaInclude,
-    LaMacro,
-    LaOptArg,
-    LaMacro2,
-    LaOptArg2,
-    LaVerbatim,
-    LaPicture,
+    Define,     // detex.l:373-376 - inside \def, waiting for '{'
+    Display,    // detex.l:390-394 - inside $$...$$ display math
+    IncludeOnly, // detex.l:410-417 - parsing \includeonly{...}
+    Input,      // detex.l:426-431 - parsing \input filename
+    Math,       // detex.l:396-401 - inside $...$ inline math
+    Control,    // detex.l:451-456 - after unknown \command
+    LaDisplay,  // detex.l:384-388 - inside \[...\] display math
+    LaEnd,      // detex.l:266-272 - inside \end{...} parsing env name
+    LaEnv,      // detex.l:262-264 - absorbing ignored environment content
+    LaFormula,  // detex.l:378-382 - inside \(...\) inline math
+    LaInclude,  // detex.l:403-408 - parsing \include{...} filename
+    LaMacro,    // detex.l:487-498 - consuming N brace-delimited arguments (KILLARGS)
+    LaOptArg,   // detex.l:497-498 - inside optional [...] arg for LaMacro
+    LaMacro2,   // detex.l:500-514 - consuming args but keeping last one (STRIPARGS)
+    LaOptArg2,  // detex.l:513-514 - inside optional [...] arg for LaMacro2
+    LaVerbatim, // detex.l:225-227 - inside verbatim environment, echoing content
+    LaPicture,  // detex.l:300-303 - parsing \includegraphics{...}
 }
 
 /// File context for stack
@@ -153,7 +187,21 @@ impl<W: Write> Detex<W> {
     }
 
     // ========== Output helpers ==========
+    // These correspond to macros defined in detex.l lines 100-111:
+    //   #define IGNORE      Ignore()
+    //   #define INCRLINENO  IncrLineNo()
+    //   #define ECHO        Echo()
+    //   #define NOUN        if (fSpace && !fWord && !fReplace) putchar(' '); else {if (fReplace) printf("noun");}
+    //   #define VERBNOUN    if (fReplace) printf(" verbs noun");
+    //   #define SPACE       if (!fWord) putchar(' ')
+    //   #define NEWLINE     LineBreak()
+    //   #define LATEX       fLatex=!fForcetex
+    //   #define KILLARGS(x) cArgs=x; LaBEGIN LaMacro
+    //   #define STRIPARGS(x) cArgs=x; LaBEGIN LaMacro2
+    //   #define CITE(x)     if (fLatex && !fCite) KILLARGS(x)
+    //   #define LaBEGIN     if (fLatex) BEGIN
 
+    /// detex.l:702-709 PrintPrefix() - outputs source location if -1 flag
     fn print_prefix(&mut self) {
         if self.opts.src_loc && self.at_column_zero {
             let filename = self.current_filename().to_string();
@@ -163,6 +211,8 @@ impl<W: Write> Detex<W> {
         }
     }
 
+    /// detex.l:730-735 Echo() - outputs text with optional prefix
+    /// Corresponds to: #define ECHO Echo()
     fn echo(&mut self, c: char) {
         self.print_prefix();
         let _ = write!(self.output, "{}", c);
@@ -173,6 +223,8 @@ impl<W: Write> Detex<W> {
         let _ = write!(self.output, "{}", s);
     }
 
+    /// detex.l:716-723 LineBreak() - outputs newline unless -w flag
+    /// Corresponds to: #define NEWLINE LineBreak()
     fn newline(&mut self) {
         if self.opts.word {
             return;
@@ -182,12 +234,16 @@ impl<W: Write> Detex<W> {
         self.at_column_zero = true;
     }
 
+    /// detex.l:106 - outputs space unless -w flag
+    /// Corresponds to: #define SPACE if (!fWord) putchar(' ')
     fn space(&mut self) {
         if !self.opts.word {
             let _ = write!(self.output, " ");
         }
     }
 
+    /// detex.l:104 - outputs space (if -s) or "noun" (if -r) for math
+    /// Corresponds to: #define NOUN if (fSpace && !fWord && !fReplace) putchar(' '); else {if (fReplace) printf("noun");}
     fn noun(&mut self) {
         if self.opts.space && !self.opts.word && !self.opts.replace {
             let _ = write!(self.output, " ");
@@ -196,12 +252,16 @@ impl<W: Write> Detex<W> {
         }
     }
 
+    /// detex.l:105 - outputs " verbs noun" for verb symbols in math (if -r)
+    /// Corresponds to: #define VERBNOUN if (fReplace) printf(" verbs noun");
     fn verb_noun(&mut self) {
         if self.opts.replace {
             let _ = write!(self.output, " verbs noun");
         }
     }
 
+    /// detex.l:757-763 Ignore() - outputs space if -s flag, otherwise nothing
+    /// Corresponds to: #define IGNORE Ignore()
     fn ignore(&mut self) {
         if self.opts.space && !self.opts.word {
             let _ = write!(self.output, " ");
@@ -210,30 +270,40 @@ impl<W: Write> Detex<W> {
 
     // ========== Helper methods ==========
 
+    /// detex.l:100 - conditionally change state if in latex mode
+    /// Corresponds to: #define LaBEGIN if (fLatex) BEGIN
     fn la_begin(&mut self, new_state: State) {
         if self.opts.is_latex() {
             self.state = new_state;
         }
     }
 
+    /// detex.l:108 - set latex mode unless -t flag
+    /// Corresponds to: #define LATEX fLatex=!fForcetex
     fn set_latex(&mut self) {
         if !self.opts.force_tex {
             self.opts.latex = true;
         }
     }
 
+    /// detex.l:109 - consume N brace-delimited arguments
+    /// Corresponds to: #define KILLARGS(x) cArgs=x; LaBEGIN LaMacro
     fn kill_args(&mut self, n: usize) {
         self.args_count = n;
         self.open_braces = 0;
         self.la_begin(State::LaMacro);
     }
 
+    /// detex.l:110 - consume N-1 arguments, keep the Nth
+    /// Corresponds to: #define STRIPARGS(x) cArgs=x; LaBEGIN LaMacro2
     fn strip_args(&mut self, n: usize) {
         self.args_count = n;
         self.open_braces = 0;
         self.la_begin(State::LaMacro2);
     }
 
+    /// detex.l:788-800 BeginEnv() - check if env should be ignored
+    /// Returns true if the environment is in the ignore list.
     fn begin_env(&mut self, env: &str) -> bool {
         if !self.opts.is_latex() {
             return false;
@@ -246,6 +316,7 @@ impl<W: Write> Detex<W> {
         }
     }
 
+    /// detex.l:806-813 EndEnv() - check if env matches current ignored env
     fn end_env(&mut self, env: &str) -> bool {
         if !self.opts.is_latex() {
             return false;
@@ -253,6 +324,7 @@ impl<W: Write> Detex<W> {
         env == self.current_ignored_env
     }
 
+    /// detex.l:847-868 IncludeFile() - include file if in includeonly list
     fn include_file(&mut self, filename: &str) -> Result<(), String> {
         if self.opts.no_follow {
             return Ok(());
@@ -263,6 +335,7 @@ impl<W: Write> Detex<W> {
         self.input_file(filename)
     }
 
+    /// detex.l:821-840 InputFile() - push current file and open new one
     fn input_file(&mut self, filename: &str) -> Result<(), String> {
         if self.opts.no_follow {
             return Ok(());
@@ -293,6 +366,7 @@ impl<W: Write> Detex<W> {
         }
     }
 
+    /// detex.l:875-884 AddInclude() - add file to includeonly list
     fn add_include(&mut self, filename: &str) {
         if self.opts.no_follow {
             return;
@@ -446,6 +520,9 @@ impl<W: Write> Detex<W> {
 
     // ========== State processors ==========
 
+    /// Process Normal state - the main text processing state.
+    /// This handles most LaTeX constructs in the document body.
+    /// See detex.l lines 212-485 for the Normal state rules.
     fn process_normal(&mut self) -> Result<(), String> {
         let c = match self.next_char() {
             Some(c) => c,
@@ -453,6 +530,7 @@ impl<W: Write> Detex<W> {
         };
 
         match c {
+            // detex.l:212 - <Normal>"%".*  - ignore comments
             '%' => {
                 while let Some(c) = self.next_char() {
                     if c == '\n' {
@@ -461,8 +539,11 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // Backslash commands handled in process_backslash
             '\\' => self.process_backslash()?,
 
+            // detex.l:390 - <Normal>"$$" - display math mode
+            // detex.l:396 - <Normal>"$" - inline math mode
             '$' => {
                 if self.peek_char() == Some('$') {
                     self.next_char();
@@ -474,10 +555,50 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:467-469 - <Normal>"{" - increment brace level
+            // Also check for detex.l:280 - <Normal>"{"{N}"pt}" - dimension hack for minipage
             '{' => {
+                // detex.l:280 - hack to fix \begin{minipage}{300pt}
+                // Try to match {NUMBER pt} pattern and ignore it
+                if let Some(next) = self.peek_char() {
+                    if next.is_ascii_digit() || next == '+' || next == '-' || next == '.' {
+                        let mut consumed = Vec::new();
+                        let mut has_digit = false;
+
+                        // Try to consume number
+                        while let Some(ch) = self.peek_char() {
+                            if ch.is_ascii_digit() || ch == '.' || ch == '+' || ch == '-' {
+                                has_digit = true;
+                                consumed.push(self.next_char().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Check for 'pt' followed by '}'
+                        let pt_match = self.try_match("pt");
+                        let close_brace = self.peek_char() == Some('}');
+
+                        if has_digit && pt_match && close_brace {
+                            self.next_char(); // consume '}'
+                            // Pattern matched, ignore it completely (detex.l:280)
+                            return Ok(());
+                        } else {
+                            // Not a match, put everything back
+                            if pt_match {
+                                self.unget_char('t');
+                                self.unget_char('p');
+                            }
+                            for ch in consumed.into_iter().rev() {
+                                self.unget_char(ch);
+                            }
+                        }
+                    }
+                }
                 self.current_braces_level += 1;
             }
 
+            // detex.l:470-476 - <Normal>"}" - decrement brace level, check footnote
             '}' => {
                 self.current_braces_level = self.current_braces_level.saturating_sub(1);
                 if self.current_braces_level as i32 == self.footnote_level {
@@ -486,9 +607,13 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:460 - <Normal>~ - non-breaking space -> space
             '~' => self.space(),
+
+            // detex.l:458 - <Normal>[\\|] - ignore pipe
             '|' => {}
 
+            // detex.l:459 - <Normal>[!?]"`" - Spanish punctuation
             '!' | '?' => {
                 if self.peek_char() == Some('`') {
                     self.next_char();
@@ -497,6 +622,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:461 - <Normal>-{2,3} - em/en dash -> single dash
             '-' => {
                 let mut dashes = 1;
                 while self.peek_char() == Some('-') && dashes < 3 {
@@ -508,6 +634,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:462-463 - <Normal>`` -> " and <Normal>` -> '
             '`' => {
                 if self.peek_char() == Some('`') {
                     self.next_char();
@@ -519,6 +646,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:464 - <Normal>'' -> "
             '\'' => {
                 if self.peek_char() == Some('\'') {
                     self.next_char();
@@ -530,6 +658,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:465 - <Normal>,, -> " (German quotes)
             ',' => {
                 if self.peek_char() == Some(',') {
                     self.next_char();
@@ -541,18 +670,21 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:484 - <Normal>"\n" - newline
             '\n' => {
                 if !self.opts.word {
                     self.newline();
                 }
             }
 
+            // detex.l:485 - <Normal>("\t")+ - tabs
             '\t' => {
                 if !self.opts.word {
                     let _ = write!(self.output, "\t");
                 }
             }
 
+            // detex.l:477-481 - <Normal>{W}[']*{W} - words with apostrophes
             _ if c.is_ascii_alphabetic() => {
                 let mut word = String::new();
                 word.push(c);
@@ -585,6 +717,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:482 - <Normal>[0-9]+ - numbers
             _ if c.is_ascii_digit() => {
                 if !self.opts.word {
                     let mut num = String::new();
@@ -600,10 +733,11 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:483 - <Normal>. - any other character
             _ => {
                 if !self.opts.word {
-                    // Check for space before \cite (opendetex pattern: " "?"\\cite")
-                    // Don't output the space if it's followed by \cite
+                    // detex.l:327 - <Normal>" "?"\\cite" - kill space before \cite
+                    // Check for space before \cite and don't output it
                     if c == ' ' && self.peek_char() == Some('\\') {
                         // Peek ahead to see if this is \cite
                         if let Some(src) = self.current_source() {
@@ -627,35 +761,61 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// Process backslash commands in Normal state.
+    /// See detex.l lines 214-456 for backslash-initiated patterns.
+    ///
+    /// This handles all patterns starting with '\' in Normal state:
+    /// - detex.l:214: \begin{document}
+    /// - detex.l:216: \begin{...} (general)
+    /// - detex.l:274-280: Spacing commands (\kern, \vskip, \hskip, \vspace, \hspace, \addvspace)
+    /// - detex.l:282-315: Box and layout commands (\newlength, \setlength, \raisebox, etc.)
+    /// - detex.l:316-322: Sectioning commands (\part, \chapter, \section, etc.)
+    /// - detex.l:324-345: Bibliography and reference commands (\bibitem, \cite, \ref, etc.)
+    /// - detex.l:347-367: \footnote and \verb
+    /// - detex.l:369-371: Command definitions (\newcommand, \renewcommand, \newenvironment)
+    /// - detex.l:373: \def
+    /// - detex.l:378: \( inline math
+    /// - detex.l:384: \[ display math
+    /// - detex.l:403-431: File inclusion (\include, \includeonly, \subfile, \input)
+    /// - detex.l:434-439: Special characters and ligatures (\slash, \aa, \O, \linebreak, etc.)
+    /// - detex.l:441-444: Generic escape sequences (\\, \ , \%, \., etc.)
     fn process_backslash(&mut self) -> Result<(), String> {
         let cmd = self.read_command_name();
 
         if cmd.is_empty() {
+            // Non-alphabetic command: \(, \[, \\, \ , \%, \$, etc.
             match self.next_char() {
+                // detex.l:378 - <Normal>"\\(" - inline formula mode
                 Some('(') => {
                     self.la_begin(State::LaFormula);
                     self.noun();
                 }
+                // detex.l:384 - <Normal>"\\[" - display formula mode
                 Some('[') => {
                     self.la_begin(State::LaDisplay);
                     self.noun();
                 }
+                // detex.l:443 - <Normal>"\\\\"{Z}(\[[^\]]*\])? - line break
                 Some('\\') => {
                     self.match_optional_star();
                     self.skip_optional_bracket_arg();
                     self.newline();
                 }
+                // detex.l:442 - <Normal>"\\ " - explicit space
                 Some(' ') => self.space(),
+                // detex.l:435 - <Normal>"\\%" - literal percent
                 Some('%') => {
                     if !self.opts.word {
                         let _ = write!(self.output, "%");
                     }
                 }
+                // Escaped dollar sign (not explicit in detex.l but handled similarly)
                 Some('$') => {
                     if !self.opts.word {
                         let _ = write!(self.output, "$");
                     }
                 }
+                // detex.l:444 - <Normal>"\\." - other escaped chars -> IGNORE
                 Some(_) | None => {
                     self.ignore();
                 }
@@ -664,9 +824,10 @@ impl<W: Write> Detex<W> {
         }
 
         match cmd.as_str() {
+            // detex.l:214-258 - \begin{...} handling
+            // Line 216: <Normal>"\\begin" {LaBEGIN LaBegin; IGNORE;}
             "begin" => {
-                // First ignore() call for \begin itself (matches opendetex line 216)
-                self.ignore();
+                self.ignore(); // detex.l:216 IGNORE
 
                 self.skip_whitespace();
                 if self.try_match("{") {
@@ -675,108 +836,162 @@ impl<W: Write> Detex<W> {
                     self.skip_whitespace();
                     self.try_match("}");
 
+                    // detex.l:214 - \begin{document}
                     if env == "document" {
                         self.set_latex();
                         while self.peek_char() == Some('\n') {
                             self.next_char();
                         }
-                        // No second ignore() for document
+                        // detex.l:214 has IGNORE but document is special (LATEX; IGNORE)
+                    // detex.l:218-223 - \begin{verbatim}
                     } else if env == "verbatim" {
                         if self.begin_env("verbatim") {
                             self.state = State::LaEnv;
-                            // No second ignore() when entering LaEnv
                         } else {
                             self.state = State::LaVerbatim;
-                            // No second ignore() for verbatim
                         }
+                        self.ignore(); // detex.l:222 IGNORE
+                    // detex.l:229-235 - \begin{minipage}
                     } else if env == "minipage" {
+                        self.kill_args(1); // detex.l:229 KILLARGS(1)
                         if self.begin_env("minipage") {
                             self.state = State::LaEnv;
-                            // No second ignore() when entering LaEnv
-                        } else {
-                            self.kill_args(1);
-                            // No second ignore() when using LaMacro
                         }
+                        // State is either LaEnv or LaMacro (from kill_args)
+                        self.ignore(); // detex.l:234 IGNORE
+                    // detex.l:237-251 - \begin{table}[pos] or \begin{figure}[pos]
                     } else if env == "table" || env == "figure" {
                         self.skip_whitespace();
                         self.skip_optional_bracket_arg();
                         if self.begin_env(&env) {
                             self.state = State::LaEnv;
-                            // No second ignore() when entering LaEnv
-                        } else {
-                            // Second ignore() for non-ignored table/figure (matches opendetex line 253-258)
-                            self.ignore();
                         }
-                    } else if self.begin_env(&env) {
-                        self.state = State::LaEnv;
-                        // No second ignore() when entering LaEnv (matches opendetex line 253-258)
+                        self.ignore(); // detex.l:242,250 IGNORE
+                    // detex.l:253-258 - \begin{other_env}
                     } else {
-                        // Second ignore() for non-ignored environments (matches opendetex line 253-258)
-                        self.ignore();
+                        if self.begin_env(&env) {
+                            self.state = State::LaEnv;
+                        }
+                        self.ignore(); // detex.l:257 IGNORE (outside the if/else)
                     }
                 }
             }
 
+            // detex.l:331 - <Normal>"\\end" {KILLARGS(1); IGNORE;}
             "end" => {
                 self.kill_args(1);
                 self.ignore();
             }
 
+            // detex.l:274-279 - spacing commands (no IGNORE)
+            // <Normal>"\\kern"{HD}            ;
+            // <Normal>"\\vskip"{VG}           ;
+            // <Normal>"\\hskip"{HG}           ;
             "kern" | "vskip" | "hskip" => {
                 self.skip_glue();
             }
+            // <Normal>"\\vspace"{Z}{S}"{"{VG}"}"  ;
+            // <Normal>"\\hspace"{Z}{S}"{"{HG}"}"  ;
             "vspace" | "hspace" => {
                 self.match_optional_star();
                 self.skip_brace_arg();
             }
+            // <Normal>"\\addvspace"{S}"{"{VG}"}" ;
             "addvspace" => {
                 self.skip_brace_arg();
             }
 
-            "newlength" | "newsavebox" | "usebox" | "parbox" | "rotatebox" | "color"
-            | "pagecolor" | "bibitem" | "bibliography" | "bibstyle" | "index" | "label"
-            | "pagestyle" | "thispagestyle" | "addfontfeature" | "fontspec" | "hypersetup"
-            | "sbox" => {
+            // detex.l:282-298 - KILLARGS commands WITHOUT IGNORE
+            // Note: These do NOT call IGNORE in detex.l
+            "newlength" | "newsavebox" | "usebox" | "parbox" | "rotatebox" | "sbox" => {
                 self.kill_args(1);
-                self.ignore();
+                // No IGNORE - detex.l:282,288,291,293,297,289
             }
 
+            // detex.l:283-287,290 - KILLARGS(2) commands WITHOUT IGNORE
             "setlength" | "addtolength" | "settowidth" | "settoheight" | "settodepth"
-            | "savebox" | "setcounter" | "addtocounter" | "stepcounter" => {
+            | "savebox" => {
                 self.kill_args(2);
-                self.ignore();
+                // No IGNORE - detex.l:283-287,290
             }
 
+            // detex.l:292,294,311 - STRIPARGS commands
             "raisebox" | "scalebox" | "foilhead" => {
                 self.strip_args(2);
+                // No IGNORE
             }
+
+            // detex.l:295 - <Normal>"\\resizebox"{Z} {KILLARGS(2);}
             "resizebox" => {
                 self.match_optional_star();
                 self.kill_args(2);
             }
 
+            // detex.l:296 - <Normal>"\\reflectbox" ;
+            "reflectbox" => {
+                // Do nothing - just skip the command
+            }
+
+            // detex.l:305-310 - color commands (no IGNORE)
             "definecolor" | "fcolorbox" | "addcontentsline" => {
                 self.kill_args(3);
             }
             "textcolor" | "colorbox" => {
                 self.kill_args(2);
             }
+            "color" | "pagecolor" => {
+                self.kill_args(1);
+                // No IGNORE - detex.l:306,310
+            }
 
+            // detex.l:312-314 - more commands without IGNORE
+            "addfontfeature" | "thispagestyle" => {
+                self.kill_args(1);
+                // No IGNORE - detex.l:312,313
+            }
+
+            // detex.l:298 - <Normal>"\\includegraphics"[^{]* {LaBEGIN LaPicture;}
             "includegraphics" => {
+                // Skip any [...] options before the {filename}
                 while self.peek_char() == Some('[') {
                     self.skip_optional_bracket_arg();
                 }
-                self.state = State::LaPicture;
+                self.la_begin(State::LaPicture);
             }
 
+            // detex.l:316-322 - sectioning commands (just skip optional *)
             "part" | "chapter" | "section" | "subsection" | "subsubsection" | "paragraph"
             | "subparagraph" => {
                 self.match_optional_star();
+                // No IGNORE or KILLARGS - these are printed as-is
             }
 
+            // detex.l:324-326 - bibliography commands WITH IGNORE
+            "bibitem" | "bibliography" | "bibstyle" => {
+                self.kill_args(1);
+                self.ignore();
+            }
+
+            // detex.l:327 - <Normal>" "?"\\cite" {KILLARGS(1);}
+            // Note: NO IGNORE! The space before is handled in process_normal
             "cite" => {
                 self.kill_args(1);
             }
+
+            // detex.l:332-333 - hypersetup, index (no IGNORE)
+            "hypersetup" | "index" => {
+                self.kill_args(1);
+                // No IGNORE - detex.l:332,333
+            }
+
+            // detex.l:335 - <Normal>"\\label" {KILLARGS(1); IGNORE;}
+            "label" => {
+                self.kill_args(1);
+                self.ignore();
+            }
+
+            // detex.l:336-337,339 - CITE macro (conditional KILLARGS) + IGNORE
+            // #define CITE(x) if (fLatex && !fCite) KILLARGS(x)
             "nameref" | "pageref" | "ref" => {
                 if self.opts.is_latex() && !self.opts.cite {
                     self.kill_args(1);
@@ -784,6 +999,33 @@ impl<W: Write> Detex<W> {
                 self.ignore();
             }
 
+            // detex.l:338 - <Normal>"\\pagestyle" {KILLARGS(1); IGNORE;}
+            "pagestyle" => {
+                self.kill_args(1);
+                self.ignore();
+            }
+
+            // detex.l:340-341 - setcounter, addtocounter WITH IGNORE
+            "setcounter" | "addtocounter" => {
+                self.kill_args(2);
+                self.ignore();
+            }
+
+            // detex.l:342-343 - newcounter, stepcounter (no IGNORE)
+            "newcounter" => {
+                self.kill_args(1);
+            }
+            "stepcounter" => {
+                self.kill_args(2); // Note: detex.l has KILLARGS(2) though stepcounter takes 1 arg
+            }
+
+            // detex.l:345 - <Normal>"\\fontspec" {KILLARGS(1);}
+            "fontspec" => {
+                self.kill_args(1);
+                // No IGNORE
+            }
+
+            // detex.l:328-330 - document class/style and usepackage
             "documentstyle" | "documentclass" => {
                 self.set_latex();
                 self.kill_args(1);
@@ -794,23 +1036,32 @@ impl<W: Write> Detex<W> {
                 self.ignore();
             }
 
+            // detex.l:403-408 - <Normal>"\\include" {LaBEGIN LaInclude; IGNORE;}
             "include" => {
                 self.la_begin(State::LaInclude);
                 self.ignore();
             }
+
+            // detex.l:410 - <Normal>"\\includeonly" {BEGIN IncludeOnly; IGNORE;}
             "includeonly" => {
                 self.state = State::IncludeOnly;
                 self.ignore();
             }
+
+            // detex.l:419-424 - <Normal>"\\subfile" {LaBEGIN LaSubfile; IGNORE;}
+            // LaSubfile has same rules as LaInclude
             "subfile" => {
                 self.la_begin(State::LaInclude);
                 self.ignore();
             }
+
+            // detex.l:426 - <Normal>"\\input" {BEGIN Input; IGNORE;}
             "input" => {
                 self.state = State::Input;
                 self.ignore();
             }
 
+            // detex.l:347-351 - <Normal>"\\footnote"(\[([^\]])+\])?"{"
             "footnote" => {
                 self.skip_optional_bracket_arg();
                 if self.try_match("{") {
@@ -820,6 +1071,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:352-367 - <Normal>"\\verb"
             "verb" => {
                 if self.opts.is_latex() {
                     if let Some(delim) = self.next_char() {
@@ -839,6 +1091,7 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:369-371 - newcommand, renewcommand, newenvironment
             "newcommand" | "renewcommand" => {
                 self.set_latex();
                 self.kill_args(2);
@@ -847,25 +1100,26 @@ impl<W: Write> Detex<W> {
                 self.set_latex();
                 self.kill_args(3);
             }
-            "newcounter" => {
-                self.kill_args(1);
-            }
 
+            // detex.l:373 - <Normal>"\\def" {BEGIN Define; IGNORE;}
             "def" => {
                 self.state = State::Define;
                 self.ignore();
             }
 
+            // detex.l:434 - <Normal>"\\slash" putchar('/');
             "slash" => {
                 if !self.opts.word {
                     let _ = write!(self.output, "/");
                 }
             }
 
+            // detex.l:437 - \\(aa|AA|ae|AE|oe|OE|ss)[ \t]*[ \t\n}] - ligatures (2 char)
             "aa" | "AA" | "ae" | "AE" | "oe" | "OE" | "ss" => {
                 if !self.opts.word {
                     let _ = write!(self.output, "{}", cmd);
                 }
+                // Consume trailing whitespace or }
                 if let Some(c) = self.peek_char() {
                     if c.is_whitespace() || c == '}' {
                         self.next_char();
@@ -873,10 +1127,12 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:438 - \\[OoijLl][ \t]*[ \t\n}] - ligatures (1 char)
             "O" | "o" | "i" | "j" | "L" | "l" => {
                 if !self.opts.word {
                     let _ = write!(self.output, "{}", cmd);
                 }
+                // Consume trailing whitespace or }
                 if let Some(c) = self.peek_char() {
                     if c.is_whitespace() || c == '}' {
                         self.next_char();
@@ -884,13 +1140,13 @@ impl<W: Write> Detex<W> {
                 }
             }
 
+            // detex.l:439 - <Normal>"\\linebreak"(\[[0-4]\])? {NEWLINE;}
             "linebreak" => {
                 self.skip_optional_bracket_arg();
                 self.newline();
             }
 
-            "reflectbox" => {}
-
+            // detex.l:441 - <Normal>\\[a-zA-Z@]+ - unknown commands -> Control state
             _ => {
                 self.state = State::Control;
                 self.ignore();
@@ -900,6 +1156,10 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:373-376 - Define state (inside \def, waiting for '{')
+    /// <Define>"{"   BEGIN Normal;
+    /// <Define>"\n"  NEWLINE;
+    /// <Define>.     ;
     fn process_define(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('{') => self.state = State::Normal,
@@ -909,6 +1169,11 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:390-394 - Display state (inside $$...$$)
+    /// <Display>"$$"           BEGIN Normal;
+    /// <Display>"\n"           NEWLINE;
+    /// <Display>{VERBSYMBOL}   VERBNOUN;
+    /// <Display>.              ;
     fn process_display(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('$') => {
@@ -926,12 +1191,18 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:396-401 - Math state (inside $...$)
+    /// <Math>"$"            BEGIN Normal;
+    /// <Math>"\n"           ;
+    /// <Math>"\\$"          ;
+    /// <Math>{VERBSYMBOL}   VERBNOUN;
+    /// <Math>.              ;
     fn process_math(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('$') => self.state = State::Normal,
             Some('\\') => {
                 if self.peek_char() == Some('$') {
-                    self.next_char();
+                    self.next_char(); // escaped $ in math mode
                 } else {
                     let cmd = self.read_command_name();
                     if is_verb_symbol(&cmd) {
@@ -939,18 +1210,25 @@ impl<W: Write> Detex<W> {
                     }
                 }
             }
-            Some('\n') => {}
+            Some('\n') => {} // No NEWLINE in Math state
             Some(c) => self.check_verb_symbol(c),
             None => {}
         }
         Ok(())
     }
 
+    /// Check if character/command is a VERBSYMBOL and call verb_noun() if so.
+    /// detex.l:204 defines VERBSYMBOL:
+    /// VERBSYMBOL = |\\leq|\\geq|\\in|>|<|\\subseteq|\subseteq|\\subset|\\supset|\\sim|\\neq|\\mapsto
+    /// This includes the character symbols: = > <
+    /// And the LaTeX command symbols: \leq \geq \in \subseteq \subset \supset \sim \neq \mapsto
     fn check_verb_symbol(&mut self, c: char) {
         match c {
+            // detex.l:204 - character symbols: = > <
             '=' | '>' | '<' => self.verb_noun(),
             '\\' => {
                 let cmd = self.read_command_name();
+                // detex.l:204 - command symbols like \leq, \geq, etc.
                 if is_verb_symbol(&cmd) {
                     self.verb_noun();
                 }
@@ -959,6 +1237,13 @@ impl<W: Write> Detex<W> {
         }
     }
 
+    /// detex.l:451-456 - Control state (after unknown \command)
+    /// <Control>\\[a-zA-Z@]+              IGNORE;
+    /// <Control>[a-zA-Z@0-9]*[-'=`][^ \t\n{]*  IGNORE;
+    /// <Control>"\n"                      {BEGIN Normal;}
+    /// <Control>[ \t]*[{]+                {++currBracesLevel;BEGIN Normal; IGNORE;}
+    /// <Control>[ \t]*                    {BEGIN Normal; IGNORE;}
+    /// <Control>.                         {yyless(0);BEGIN Normal;}
     fn process_control(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('\n') => self.state = State::Normal,
@@ -991,6 +1276,11 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:410-417 - IncludeOnly state (parsing \includeonly{file1,file2,...})
+    /// <IncludeOnly>[^{ \t,\n}]+   AddInclude(yytext);
+    /// <IncludeOnly>"}"            {if (csbIncList==0) rgsbIncList[csbIncList++]='\0'; BEGIN Normal;}
+    /// <IncludeOnly>"\n"+          NEWLINE;
+    /// <IncludeOnly>.              ;
     fn process_include_only(&mut self) -> Result<(), String> {
         self.skip_whitespace();
         match self.peek_char() {
@@ -1027,6 +1317,10 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:426-431 - Input state (parsing \input filename)
+    /// <Input>[^{ \t\n}]+   {InputFile(yytext); BEGIN Normal;}
+    /// <Input>"\n"+         NEWLINE;
+    /// <Input>.             ;
     fn process_input(&mut self) -> Result<(), String> {
         self.skip_whitespace();
         match self.peek_char() {
@@ -1054,6 +1348,10 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:262-264 - LaEnv state (absorbing ignored environment content)
+    /// <LaEnv>"\\end"   {LaBEGIN LaEnd; IGNORE;}
+    /// <LaEnv>"\n"+     ;
+    /// <LaEnv>.         {INCRLINENO;}
     fn process_la_env(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('\\') => {
@@ -1067,6 +1365,10 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:266-272 - LaEnd state (parsing \end{envname})
+    /// <LaEnd>{W}   {if (EndEnv(yytext)) BEGIN Normal; IGNORE;}
+    /// <LaEnd>"}"   {BEGIN LaEnv; IGNORE;}
+    /// <LaEnd>.     {INCRLINENO;}
     fn process_la_end(&mut self) -> Result<(), String> {
         self.skip_whitespace();
         match self.peek_char() {
@@ -1108,6 +1410,11 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:384-388 - LaDisplay state (inside \[...\])
+    /// <LaDisplay>"\\]"         BEGIN Normal;
+    /// <LaDisplay>"\n"          NEWLINE;
+    /// <LaDisplay>{VERBSYMBOL}  VERBNOUN;
+    /// <LaDisplay>.             ;
     fn process_la_display(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('\\') => {
@@ -1127,6 +1434,11 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:378-382 - LaFormula state (inside \(...\))
+    /// <LaFormula>"\\)"         BEGIN Normal;
+    /// <LaFormula>"\n"          NEWLINE;
+    /// <LaFormula>{VERBSYMBOL}  VERBNOUN;
+    /// <LaFormula>.             ;
     fn process_la_formula(&mut self) -> Result<(), String> {
         match self.next_char() {
             Some('\\') => {
@@ -1146,6 +1458,11 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:403-408 - LaInclude state (parsing \include{filename})
+    /// Also handles LaSubfile (detex.l:419-424) which has identical rules.
+    /// <LaInclude>[^{ \t\n}]+   {IncludeFile(yytext); BEGIN Normal;}
+    /// <LaInclude>"\n"+         NEWLINE;
+    /// <LaInclude>.             ;
     fn process_la_include(&mut self) -> Result<(), String> {
         self.skip_whitespace();
         match self.peek_char() {
@@ -1173,16 +1490,29 @@ impl<W: Write> Detex<W> {
         Ok(())
     }
 
+    /// detex.l:487-498 - LaMacro state (consuming N brace-delimited arguments)
+    /// <LaMacro>"\["              { BEGIN LaOptArg; }
+    /// <LaMacro>"{"               { cOpenBrace++; }
+    /// <LaMacro>"}""\n"{0,1}      { cOpenBrace--; INCRLINENO;
+    ///                              if (cOpenBrace == 0) {
+    ///                                if (--cArgs==0)
+    ///                                  BEGIN Normal;
+    ///                              }
+    ///                            }
+    /// <LaMacro>.                 ;
     fn process_la_macro(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:487
             Some('[') => self.state = State::LaOptArg,
+            // detex.l:488
             Some('{') => self.open_braces += 1,
+            // detex.l:489-495
             Some('}') => {
                 self.open_braces = self.open_braces.saturating_sub(1);
                 if self.open_braces == 0 {
                     self.args_count = self.args_count.saturating_sub(1);
                     if self.args_count == 0 {
-                        // Consume optional trailing newline after closing brace
+                        // detex.l:489 - "}""\n"{0,1} - consume optional trailing newline
                         if self.peek_char() == Some('\n') {
                             self.next_char();
                         }
@@ -1190,22 +1520,42 @@ impl<W: Write> Detex<W> {
                     }
                 }
             }
+            // detex.l:496 - <LaMacro>. - ignore all other characters
             Some('\n') | Some(_) | None => {}
         }
         Ok(())
     }
 
+    /// detex.l:497-498 - LaOptArg state (inside optional [...] for LaMacro)
+    /// <LaOptArg>"\]"    BEGIN LaMacro;
+    /// <LaOptArg>[^\]]*  ;
     fn process_la_opt_arg(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:497
             Some(']') => self.state = State::LaMacro,
+            // detex.l:498 - ignore everything else
             Some(_) | None => {}
         }
         Ok(())
     }
 
+    /// detex.l:500-514 - LaMacro2 state (consuming N-1 args, keeping last)
+    /// <LaMacro2>"\["    { BEGIN LaOptArg2; }
+    /// <LaMacro2>"{"     { if (cOpenBrace == 0) {
+    ///                       if (--cArgs==0) {
+    ///                         BEGIN Normal;
+    ///                         cOpenBrace--;
+    ///                       }
+    ///                     }
+    ///                     cOpenBrace++;
+    ///                   }
+    /// <LaMacro2>"}"     { cOpenBrace--; }
+    /// <LaMacro2>.       ;
     fn process_la_macro2(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:500
             Some('[') => self.state = State::LaOptArg2,
+            // detex.l:501-510
             Some('{') => {
                 if self.open_braces == 0 {
                     self.args_count = self.args_count.saturating_sub(1);
@@ -1216,22 +1566,34 @@ impl<W: Write> Detex<W> {
                 }
                 self.open_braces += 1;
             }
+            // detex.l:511
             Some('}') => self.open_braces = self.open_braces.saturating_sub(1),
+            // detex.l:512 - ignore all other characters
             Some(_) | None => {}
         }
         Ok(())
     }
 
+    /// detex.l:513-514 - LaOptArg2 state (inside optional [...] for LaMacro2)
+    /// <LaOptArg2>"\]"  BEGIN LaMacro2;
+    /// <LaOptArg2>.     ;
     fn process_la_opt_arg2(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:513
             Some(']') => self.state = State::LaMacro2,
+            // detex.l:514 - ignore everything else
             Some(_) | None => {}
         }
         Ok(())
     }
 
+    /// detex.l:225-227 - LaVerbatim state (inside verbatim environment)
+    /// <LaVerbatim>"\\end"{S}"{"{S}"verbatim"{S}"}"  BEGIN Normal; IGNORE;
+    /// <LaVerbatim>[^\\]+                            ECHO;
+    /// <LaVerbatim>.                                 ECHO;
     fn process_la_verbatim(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:225 - check for \end{verbatim}
             Some('\\') => {
                 if self.try_match("end") {
                     self.skip_whitespace();
@@ -1241,23 +1603,34 @@ impl<W: Write> Detex<W> {
                             self.skip_whitespace();
                             self.try_match("}");
                             self.state = State::Normal;
+                            self.ignore();
+                            return Ok(());
                         }
                     }
-                } else {
-                    let _ = write!(self.output, "\\");
                 }
+                // detex.l:227 - if not \end{verbatim}, echo the backslash
+                let _ = write!(self.output, "\\");
             }
+            // detex.l:226-227 - echo all other characters
             Some(c) => self.echo(c),
             None => {}
         }
         Ok(())
     }
 
+    /// detex.l:300-303 - LaPicture state (parsing \includegraphics{filename})
+    /// <LaPicture>"{"         ;
+    /// <LaPicture>[^{}]+      { if(fShowPictures) { printf("<Picture %s>", yytext); } }
+    /// <LaPicture>"\}"{S}"\n"+  { BEGIN Normal; INCRLINENO; }
+    /// <LaPicture>"\}"        BEGIN Normal;
     fn process_la_picture(&mut self) -> Result<(), String> {
         match self.next_char() {
+            // detex.l:300 - skip opening brace
             Some('{') => {}
+            // detex.l:302-303 - closing brace ends picture mode
             Some('}') => {
                 self.state = State::Normal;
+                // detex.l:302 - consume trailing whitespace/newlines
                 while let Some(c) = self.peek_char() {
                     if c.is_whitespace() {
                         self.next_char();
@@ -1269,6 +1642,7 @@ impl<W: Write> Detex<W> {
                     }
                 }
             }
+            // detex.l:301 - picture filename
             Some(c) => {
                 if self.opts.show_pictures {
                     let mut name = String::new();
@@ -1288,6 +1662,8 @@ impl<W: Write> Detex<W> {
     }
 }
 
+/// Check if a LaTeX command name is a verb symbol
+/// detex.l:204 - VERBSYMBOL pattern includes these commands
 fn is_verb_symbol(cmd: &str) -> bool {
     matches!(
         cmd,

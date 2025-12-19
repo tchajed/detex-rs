@@ -79,10 +79,15 @@ fn run_comparison_tests(_test_name_suffix: &str, flags: &[&str]) {
     ensure_opendetex_built();
 
     // Get all test files
-    let test_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("latex_tests").join("simple");
+    let test_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("latex_tests")
+        .join("simple");
     let test_files = get_tex_files(&test_dir);
 
-    assert!(!test_files.is_empty(), "No test files found in latex_tests/simple");
+    assert!(
+        !test_files.is_empty(),
+        "No test files found in latex_tests/simple"
+    );
 
     let flags_display = if flags.is_empty() {
         "no flags".to_string()
@@ -113,7 +118,11 @@ fn run_comparison_tests(_test_name_suffix: &str, flags: &[&str]) {
 
     // Report all failures at the end
     if !failures.is_empty() {
-        let mut error_msg = format!("\n{} test(s) failed with {}:\n", failures.len(), flags_display);
+        let mut error_msg = format!(
+            "\n{} test(s) failed with {}:\n",
+            failures.len(),
+            flags_display
+        );
 
         for (test_name, opendetex_output, detex_rs_output) in failures {
             error_msg.push_str(&format!(
@@ -147,7 +156,6 @@ fn test_simple_latex_files_math_flag() {
 }
 
 #[test]
-#[ignore]
 fn test_simple_latex_files_space_flag() {
     run_comparison_tests("space", &["-s"]);
 }
