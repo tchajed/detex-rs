@@ -35,23 +35,27 @@ fn ensure_opendetex_built() {
     }
 }
 
-/// Run detex-rs on a file and return the output
-fn run_detex_rs(input_file: &Path) -> String {
-    let output = Command::new(detex_rs_bin())
-        .arg(input_file)
-        .output()
-        .expect("Failed to run detex-rs");
+/// Run detex-rs on a file with optional flags and return the output
+fn run_detex_rs(input_file: &Path, flags: &[&str]) -> String {
+    let mut cmd = Command::new(detex_rs_bin());
+    for flag in flags {
+        cmd.arg(flag);
+    }
+    cmd.arg(input_file);
 
+    let output = cmd.output().expect("Failed to run detex-rs");
     String::from_utf8(output.stdout).expect("detex-rs output was not valid UTF-8")
 }
 
-/// Run opendetex on a file and return the output
-fn run_opendetex(input_file: &Path) -> String {
-    let output = Command::new(opendetex_bin())
-        .arg(input_file)
-        .output()
-        .expect("Failed to run opendetex");
+/// Run opendetex on a file with optional flags and return the output
+fn run_opendetex(input_file: &Path, flags: &[&str]) -> String {
+    let mut cmd = Command::new(opendetex_bin());
+    for flag in flags {
+        cmd.arg(flag);
+    }
+    cmd.arg(input_file);
 
+    let output = cmd.output().expect("Failed to run opendetex");
     String::from_utf8(output.stdout).expect("opendetex output was not valid UTF-8")
 }
 
@@ -69,8 +73,8 @@ fn get_tex_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-#[test]
-fn test_simple_latex_files() {
+/// Generic test runner that compares outputs with optional flags
+fn run_comparison_tests(_test_name_suffix: &str, flags: &[&str]) {
     // Ensure opendetex is built before running tests
     ensure_opendetex_built();
 
@@ -80,23 +84,57 @@ fn test_simple_latex_files() {
 
     assert!(!test_files.is_empty(), "No test files found in latex_tests/simple");
 
+    let flags_display = if flags.is_empty() {
+        "no flags".to_string()
+    } else {
+        flags.join(" ")
+    };
+
+    eprintln!("\n=== Testing with {} ===", flags_display);
+
     // Run comparison for each test file
     for test_file in test_files {
         let test_name = test_file.file_name().unwrap().to_string_lossy();
-        eprintln!("\nTesting: {}", test_name);
+        eprintln!("\nTesting: {} ({})", test_name, flags_display);
 
-        let detex_rs_output = run_detex_rs(&test_file);
-        let opendetex_output = run_opendetex(&test_file);
+        let detex_rs_output = run_detex_rs(&test_file, flags);
+        let opendetex_output = run_opendetex(&test_file, flags);
 
         assert_eq!(
             opendetex_output,
             detex_rs_output,
-            "Output mismatch for {}\n\nOpendetex output:\n{}\n\ndetex-rs output:\n{}",
+            "Output mismatch for {} with {}\n\nOpendetex output:\n{}\n\ndetex-rs output:\n{}",
             test_name,
+            flags_display,
             opendetex_output,
             detex_rs_output
         );
 
         eprintln!("  ✓ Passed");
     }
+}
+
+#[test]
+fn test_simple_latex_files() {
+    run_comparison_tests("default", &[]);
+}
+
+#[test]
+fn test_simple_latex_files_cite_flag() {
+    run_comparison_tests("cite", &["-c"]);
+}
+
+#[test]
+fn test_simple_latex_files_env_flag() {
+    run_comparison_tests("env", &["-e", "equation,verbatim"]);
+}
+
+#[test]
+fn test_simple_latex_files_math_flag() {
+    run_comparison_tests("math", &["-r"]);
+}
+
+#[test]
+fn test_simple_latex_files_space_flag() {
+    run_comparison_tests("space", &["-s"]);
 }

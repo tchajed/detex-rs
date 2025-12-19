@@ -602,6 +602,23 @@ impl<W: Write> Detex<W> {
 
             _ => {
                 if !self.opts.word {
+                    // Check for space before \cite (opendetex pattern: " "?"\\cite")
+                    // Don't output the space if it's followed by \cite
+                    if c == ' ' && self.peek_char() == Some('\\') {
+                        // Peek ahead to see if this is \cite
+                        if let Some(src) = self.current_source() {
+                            let lookahead = src.peek_ahead(6); // Look at next 6 chars: \cite + potential next char
+                            if lookahead.len() >= 5 && lookahead[0..5] == *"\\cite" {
+                                // Check that "cite" is not followed by more letters (i.e., it's not \citation)
+                                if lookahead.len() == 5
+                                    || !lookahead.chars().nth(5).unwrap().is_ascii_alphabetic()
+                                {
+                                    // This is " \cite" - don't output the space
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
                     self.echo(c);
                 }
             }
@@ -648,6 +665,9 @@ impl<W: Write> Detex<W> {
 
         match cmd.as_str() {
             "begin" => {
+                // First ignore() call for \begin itself (matches opendetex line 216)
+                self.ignore();
+
                 self.skip_whitespace();
                 if self.try_match("{") {
                     self.skip_whitespace();
@@ -660,29 +680,41 @@ impl<W: Write> Detex<W> {
                         while self.peek_char() == Some('\n') {
                             self.next_char();
                         }
+                        // No second ignore() for document
                     } else if env == "verbatim" {
                         if self.begin_env("verbatim") {
                             self.state = State::LaEnv;
+                            // No second ignore() when entering LaEnv
                         } else {
                             self.state = State::LaVerbatim;
+                            // No second ignore() for verbatim
                         }
                     } else if env == "minipage" {
                         if self.begin_env("minipage") {
                             self.state = State::LaEnv;
+                            // No second ignore() when entering LaEnv
                         } else {
                             self.kill_args(1);
+                            // No second ignore() when using LaMacro
                         }
                     } else if env == "table" || env == "figure" {
                         self.skip_whitespace();
                         self.skip_optional_bracket_arg();
                         if self.begin_env(&env) {
                             self.state = State::LaEnv;
+                            // No second ignore() when entering LaEnv
+                        } else {
+                            // Second ignore() for non-ignored table/figure (matches opendetex line 253-258)
+                            self.ignore();
                         }
                     } else if self.begin_env(&env) {
                         self.state = State::LaEnv;
+                        // No second ignore() when entering LaEnv (matches opendetex line 253-258)
+                    } else {
+                        // Second ignore() for non-ignored environments (matches opendetex line 253-258)
+                        self.ignore();
                     }
                 }
-                self.ignore();
             }
 
             "end" => {
@@ -937,10 +969,12 @@ impl<W: Write> Detex<W> {
                     self.current_braces_level += 1;
                 }
                 self.state = State::Normal;
+                self.ignore();
             }
             Some('{') => {
                 self.current_braces_level += 1;
                 self.state = State::Normal;
+                self.ignore();
             }
             Some('\\') => {
                 let _ = self.read_command_name();
@@ -1025,6 +1059,7 @@ impl<W: Write> Detex<W> {
             Some('\\') => {
                 if self.try_match("end") {
                     self.la_begin(State::LaEnd);
+                    self.ignore();
                 }
             }
             Some('\n') | Some(_) | None => {}
@@ -1040,23 +1075,27 @@ impl<W: Write> Detex<W> {
                 self.skip_whitespace();
                 let env = self.read_command_name();
                 self.skip_whitespace();
-                self.try_match("}");
+                // Don't consume the '}' here - let it be matched separately
+                // to match opendetex behavior where '}' in LaEnd calls IGNORE
 
                 if self.end_env(&env) {
                     self.state = State::Normal;
                 } else {
                     self.state = State::LaEnv;
                 }
+                self.ignore();
             }
             Some(c) if c.is_ascii_alphabetic() => {
                 let env = self.read_command_name();
                 if self.end_env(&env) {
                     self.state = State::Normal;
                 }
+                self.ignore();
             }
             Some('}') => {
                 self.next_char();
                 self.state = State::LaEnv;
+                self.ignore();
             }
             Some('\n') => {
                 self.next_char();

@@ -151,4 +151,30 @@ impl CharSource {
     pub fn is_eof(&self) -> bool {
         self.pushback.is_empty() && self.pos >= self.buffer.len()
     }
+
+    /// Peek ahead at the next n characters without consuming them
+    pub fn peek_ahead(&self, n: usize) -> String {
+        let mut result = String::new();
+        let mut pushback_used = 0;
+
+        // First consume from pushback (in reverse order)
+        for i in (0..self.pushback.len()).rev() {
+            if result.len() >= n {
+                break;
+            }
+            result.push(self.pushback[self.pushback.len() - 1 - i]);
+            pushback_used += 1;
+        }
+
+        // Then from buffer
+        let start_pos = self.pos;
+        for i in 0..(n - pushback_used) {
+            if start_pos + i >= self.buffer.len() {
+                break;
+            }
+            result.push(self.buffer[start_pos + i]);
+        }
+
+        result
+    }
 }

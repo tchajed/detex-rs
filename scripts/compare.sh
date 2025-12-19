@@ -7,7 +7,7 @@ set -eu
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DETEX_RS_BIN="$SCRIPT_DIR/../target/release/detex-rs"
+DETEX_RS_BIN="$SCRIPT_DIR/../target/debug/detex-rs"
 OPENDETEX_DIR="$SCRIPT_DIR/../opendetex-2.8.11"
 OPENDETEX_BIN="$OPENDETEX_DIR/detex"
 
@@ -16,9 +16,7 @@ if [ ! -f "$OPENDETEX_BIN" ]; then
   (cd "$OPENDETEX_DIR" && make)
 fi
 
-if [ ! -f "$DETEX_RS_BIN" ]; then
-  cargo build -r
-fi
+cargo build --manifest-path "$SCRIPT_DIR/../Cargo.toml" --quiet
 
 # Create temporary files for outputs
 DETEX_RS_OUT=$(mktemp -t detex-rs.XXXXXX)
