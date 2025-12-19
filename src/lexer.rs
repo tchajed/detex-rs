@@ -500,7 +500,6 @@ impl<W: Write> Detex<W> {
     }
 
     fn skip_optional_bracket_arg(&mut self) {
-        self.skip_whitespace();
         if self.peek_char() == Some('[') {
             self.next_char();
             let mut depth = 1;
