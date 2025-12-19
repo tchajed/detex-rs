@@ -1149,6 +1149,10 @@ impl<W: Write> Detex<W> {
                 if self.open_braces == 0 {
                     self.args_count = self.args_count.saturating_sub(1);
                     if self.args_count == 0 {
+                        // Consume optional trailing newline after closing brace
+                        if self.peek_char() == Some('\n') {
+                            self.next_char();
+                        }
                         self.state = State::Normal;
                     }
                 }
