@@ -9,3 +9,6 @@ keywords = ["tex", "latex", "text-processing"]
 categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
+
+[dev-dependencies]
+walkdir = "2"
