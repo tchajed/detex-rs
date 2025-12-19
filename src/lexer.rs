@@ -686,13 +686,7 @@ impl<W: Write> Detex<W> {
             }
 
             "end" => {
-                self.skip_whitespace();
-                if self.try_match("{") {
-                    self.skip_whitespace();
-                    let _env = self.read_command_name();
-                    self.skip_whitespace();
-                    self.try_match("}");
-                }
+                self.kill_args(1);
                 self.ignore();
             }
 

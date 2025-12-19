@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -eu
+
 # Script to compare outputs of detex-rs and opendetex
 # Usage: ./compare_detex.sh [arguments for detex]
 
@@ -31,5 +33,5 @@ trap "rm -f $DETEX_RS_OUT $OPENDETEX_OUT" EXIT
 # Run opendetex
 "$OPENDETEX_BIN" "$@" >"$OPENDETEX_OUT" 2>&1
 
-# Show diff
-diff -u "$OPENDETEX_OUT" "$DETEX_RS_OUT" || true
+# Show diff (and exit with non-zero status if differences are found)
+diff -u "$OPENDETEX_OUT" "$DETEX_RS_OUT"
