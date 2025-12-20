@@ -1,31 +1,7 @@
-//! detex - Strip TeX/LaTeX commands from input files
-//!
-//! This is a Rust port of the opendetex program originally written
-//! by Daniel Trinkle at Purdue University.
-//!
-//! Copyright (c) 1986-2007 Purdue University
-//! All rights reserved.
-//!
-//! Permission is hereby granted, free of charge, to any person obtaining
-//! a copy of this software and associated documentation files (the
-//! "Software"), to deal with the Software without restriction, including
-//! without limitation the rights to use, copy, modify, merge, publish,
-//! distribute, sublicense, and/or sell copies of the Software, and to
-//! permit persons to whom the Software is furnished to do so, subject to
-//! the following conditions:
-//!
-//! Redistributions of source code must retain the above copyright notice,
-//! this list of conditions and the following disclaimers.
-
-mod config;
-mod file_handler;
-mod lexer;
-
 use std::io::{self, BufWriter};
 use std::process;
 
-use config::{Options, VERSION};
-use lexer::Detex;
+use detex_rs::{Detex, Options, VERSION};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
