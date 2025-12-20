@@ -14,26 +14,19 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo build --verbose
-      - run: sudo apt-get update && sudo apt-get install -y flex libfl-dev
-      - run: make -C opendetex-2.8.11
+      - name: Install flex
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex libfl-dev
       - run: cargo test --verbose
 
-  fmt:
-    name: Rustfmt
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy
       - run: cargo clippy -- -D warnings
