@@ -35,13 +35,11 @@ pub fn tex_open(filename: &str, opts: &Options) -> Option<(File, PathBuf)> {
         }
 
         // If has some other extension, try it
-        if let Some(ext) = path.extension() {
-            if !ext.is_empty() {
-                if let Some(result) = try_open_file(&full_path) {
+        if let Some(ext) = path.extension()
+            && !ext.is_empty()
+                && let Some(result) = try_open_file(&full_path) {
                     return Some(result);
                 }
-            }
-        }
 
         // Try adding .tex extension
         let tex_path = full_path.with_extension("tex");
