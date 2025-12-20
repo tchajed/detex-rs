@@ -449,9 +449,10 @@ impl<W: Write> Detex<W> {
     fn skip_glue(&mut self) {
         self.skip_whitespace();
         if let Some(c) = self.peek_char()
-            && (c == '+' || c == '-') {
-                self.next_char();
-            }
+            && (c == '+' || c == '-')
+        {
+            self.next_char();
+        }
         while let Some(c) = self.peek_char() {
             if c.is_ascii_digit() || c == '.' {
                 self.next_char();
@@ -464,9 +465,10 @@ impl<W: Write> Detex<W> {
         while self.try_match("plus") || self.try_match("minus") {
             self.skip_whitespace();
             if let Some(c) = self.peek_char()
-                && (c == '+' || c == '-') {
-                    self.next_char();
-                }
+                && (c == '+' || c == '-')
+            {
+                self.next_char();
+            }
             while let Some(c) = self.peek_char() {
                 if c.is_ascii_digit() || c == '.' {
                     self.next_char();
@@ -558,39 +560,40 @@ impl<W: Write> Detex<W> {
                 // detex.l:280 - hack to fix \begin{minipage}{300pt}
                 // Try to match {NUMBER pt} pattern and ignore it
                 if let Some(next) = self.peek_char()
-                    && (next.is_ascii_digit() || next == '+' || next == '-' || next == '.') {
-                        let mut consumed = Vec::new();
-                        let mut has_digit = false;
+                    && (next.is_ascii_digit() || next == '+' || next == '-' || next == '.')
+                {
+                    let mut consumed = Vec::new();
+                    let mut has_digit = false;
 
-                        // Try to consume number
-                        while let Some(ch) = self.peek_char() {
-                            if ch.is_ascii_digit() || ch == '.' || ch == '+' || ch == '-' {
-                                has_digit = true;
-                                consumed.push(self.next_char().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-
-                        // Check for 'pt' followed by '}'
-                        let pt_match = self.try_match("pt");
-                        let close_brace = self.peek_char() == Some('}');
-
-                        if has_digit && pt_match && close_brace {
-                            self.next_char(); // consume '}'
-                            // Pattern matched, ignore it completely (detex.l:280)
-                            return Ok(());
+                    // Try to consume number
+                    while let Some(ch) = self.peek_char() {
+                        if ch.is_ascii_digit() || ch == '.' || ch == '+' || ch == '-' {
+                            has_digit = true;
+                            consumed.push(self.next_char().unwrap());
                         } else {
-                            // Not a match, put everything back
-                            if pt_match {
-                                self.unget_char('t');
-                                self.unget_char('p');
-                            }
-                            for ch in consumed.into_iter().rev() {
-                                self.unget_char(ch);
-                            }
+                            break;
                         }
                     }
+
+                    // Check for 'pt' followed by '}'
+                    let pt_match = self.try_match("pt");
+                    let close_brace = self.peek_char() == Some('}');
+
+                    if has_digit && pt_match && close_brace {
+                        self.next_char(); // consume '}'
+                        // Pattern matched, ignore it completely (detex.l:280)
+                        return Ok(());
+                    } else {
+                        // Not a match, put everything back
+                        if pt_match {
+                            self.unget_char('t');
+                            self.unget_char('p');
+                        }
+                        for ch in consumed.into_iter().rev() {
+                            self.unget_char(ch);
+                        }
+                    }
+                }
                 self.current_braces_level += 1;
             }
 
@@ -1078,20 +1081,21 @@ impl<W: Write> Detex<W> {
             // detex.l:352-367 - <Normal>"\\verb"
             "verb" => {
                 if self.opts.is_latex()
-                    && let Some(delim) = self.next_char() {
-                        if delim < ' ' {
+                    && let Some(delim) = self.next_char()
+                {
+                    if delim < ' ' {
+                        return Err("\\verb not complete before eof".to_string());
+                    }
+                    while let Some(c) = self.next_char() {
+                        if c == delim {
+                            break;
+                        }
+                        if c == '\n' || c == '\0' {
                             return Err("\\verb not complete before eof".to_string());
                         }
-                        while let Some(c) = self.next_char() {
-                            if c == delim {
-                                break;
-                            }
-                            if c == '\n' || c == '\0' {
-                                return Err("\\verb not complete before eof".to_string());
-                            }
-                            let _ = write!(self.output, "{}", c);
-                        }
+                        let _ = write!(self.output, "{}", c);
                     }
+                }
             }
 
             // detex.l:369-371 - newcommand, renewcommand, newenvironment
@@ -1124,9 +1128,10 @@ impl<W: Write> Detex<W> {
                 }
                 // Consume trailing whitespace or }
                 if let Some(c) = self.peek_char()
-                    && (c.is_whitespace() || c == '}') {
-                        self.next_char();
-                    }
+                    && (c.is_whitespace() || c == '}')
+                {
+                    self.next_char();
+                }
             }
 
             // detex.l:438 - \\[OoijLl][ \t]*[ \t\n}] - ligatures (1 char)
@@ -1136,9 +1141,10 @@ impl<W: Write> Detex<W> {
                 }
                 // Consume trailing whitespace or }
                 if let Some(c) = self.peek_char()
-                    && (c.is_whitespace() || c == '}') {
-                        self.next_char();
-                    }
+                    && (c.is_whitespace() || c == '}')
+                {
+                    self.next_char();
+                }
             }
 
             // detex.l:439 - <Normal>"\\linebreak"(\[[0-4]\])? {NEWLINE;}
@@ -1355,10 +1361,11 @@ impl<W: Write> Detex<W> {
     /// <LaEnv>.         {INCRLINENO;}
     fn process_la_env(&mut self) -> Result<(), String> {
         if let Some('\\') = self.next_char()
-            && self.try_match("end") {
-                self.la_begin(State::LaEnd);
-                self.ignore();
-            }
+            && self.try_match("end")
+        {
+            self.la_begin(State::LaEnd);
+            self.ignore();
+        }
         Ok(())
     }
 
