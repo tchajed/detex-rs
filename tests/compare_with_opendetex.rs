@@ -172,6 +172,12 @@ fn test_complex_latex_files_space_flag() {
 }
 
 #[test]
-fn test_simple_latex_files_tabular_follow_cite_srcloc() {
+fn test_simple_latex_files_srcloc() {
     run_comparison_tests_in_dir("simple", &["-e", "tabular", "-l", "-c", "-1"]);
+}
+
+#[test]
+#[ignore] // this may be due to a detex bug
+fn test_complex_latex_files_srcloc() {
+    run_comparison_tests_in_dir(".", &["-e", "tabular", "-l", "-c", "-1"]);
 }
