@@ -24,6 +24,8 @@
 //! - detex.l:212-485: Normal state rules → process_normal() and process_backslash()
 //! - detex.l:487-514: Other state rules → process_la_macro(), process_math(), etc.
 
+#![allow(clippy::single_match)]
+
 use std::io::{Read, Write};
 
 use crate::config::{MAX_FILE_STACK, Options};
