@@ -1,5 +1,7 @@
 # detex-rs
 
+[![CI](https://github.com/tchajed/detex-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/tchajed/detex-rs/actions/workflows/ci.yml)
+
 Port of [opendetex](https://github.com/pkubowicz/opendetex) to Rust using LLMs.
 
 Claude Opus 4.5 did the majority of the work with this prompt, along with detex's `detex.l` (written in flex, a lexer generator, but largely C code) and `detex.h`:
