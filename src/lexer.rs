@@ -609,8 +609,8 @@ impl<W: Write> Detex<W> {
             // detex.l:460 - <Normal>~ - non-breaking space -> space
             '~' => self.space(),
 
-            // detex.l:458 - <Normal>[\\|] - ignore pipe
-            '|' => {}
+            // detex.l:458 - <Normal>[\\|] - ignore pipe, output space if -s
+            '|' => self.ignore(),
 
             // detex.l:459 - <Normal>[!?]"`" - Spanish punctuation
             '!' | '?' => {
@@ -825,8 +825,16 @@ impl<W: Write> Detex<W> {
         match cmd.as_str() {
             // detex.l:214-258 - \begin{...} handling
             // Line 216: <Normal>"\\begin" {LaBEGIN LaBegin; IGNORE;}
+            // Note: LaBEGIN is "if (fLatex) BEGIN", so in TeX mode we don't
+            // enter LaBegin state - we stay in Normal and just call IGNORE.
             "begin" => {
                 self.ignore(); // detex.l:216 IGNORE
+
+                // In TeX mode (not LaTeX), we don't process the {env} part.
+                // The {env} will be processed as normal text in Normal state.
+                if !self.opts.is_latex() {
+                    return Ok(());
+                }
 
                 self.skip_whitespace();
                 if self.try_match("{") {
