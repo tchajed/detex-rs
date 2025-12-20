@@ -505,12 +505,13 @@ impl<W: Write> Detex<W> {
                     Some('\\') => {
                         // Skip the next character after backslash
                         if let Some(ch) = self.next_char()
-                            && ch == '\n' {
-                                if let Some(source) = self.current_source_mut() {
-                                    source.incr_line();
-                                }
-                                self.at_column_zero = true;
+                            && ch == '\n'
+                        {
+                            if let Some(source) = self.current_source_mut() {
+                                source.incr_line();
                             }
+                            self.at_column_zero = true;
+                        }
                     }
                     Some('\n') => {
                         // Track newlines in skipped content
@@ -537,12 +538,13 @@ impl<W: Write> Detex<W> {
                     Some('\\') => {
                         // Skip the next character after backslash
                         if let Some(ch) = self.next_char()
-                            && ch == '\n' {
-                                if let Some(source) = self.current_source_mut() {
-                                    source.incr_line();
-                                }
-                                self.at_column_zero = true;
+                            && ch == '\n'
+                        {
+                            if let Some(source) = self.current_source_mut() {
+                                source.incr_line();
                             }
+                            self.at_column_zero = true;
+                        }
                     }
                     Some('\n') => {
                         // Track newlines in skipped content
