@@ -86,7 +86,8 @@ fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
 
     assert!(
         !test_files.is_empty(),
-        "No test files found in latex_tests/{}", dir
+        "No test files found in latex_tests/{}",
+        dir
     );
 
     let flags_display = if flags.is_empty() {

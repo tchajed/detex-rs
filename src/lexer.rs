@@ -26,8 +26,8 @@
 
 use std::io::{Read, Write};
 
-use crate::config::{Options, MAX_FILE_STACK};
-use crate::file_handler::{in_include_list, tex_open, CharSource};
+use crate::config::{MAX_FILE_STACK, Options};
+use crate::file_handler::{CharSource, in_include_list, tex_open};
 
 /// Lexer states matching the original flex states.
 /// See detex.l lines 206-209:
@@ -43,23 +43,23 @@ use crate::file_handler::{in_include_list, tex_open, CharSource};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Normal,
-    Define,     // detex.l:373-376 - inside \def, waiting for '{'
-    Display,    // detex.l:390-394 - inside $$...$$ display math
+    Define,      // detex.l:373-376 - inside \def, waiting for '{'
+    Display,     // detex.l:390-394 - inside $$...$$ display math
     IncludeOnly, // detex.l:410-417 - parsing \includeonly{...}
-    Input,      // detex.l:426-431 - parsing \input filename
-    Math,       // detex.l:396-401 - inside $...$ inline math
-    Control,    // detex.l:451-456 - after unknown \command
-    LaDisplay,  // detex.l:384-388 - inside \[...\] display math
-    LaEnd,      // detex.l:266-272 - inside \end{...} parsing env name
-    LaEnv,      // detex.l:262-264 - absorbing ignored environment content
-    LaFormula,  // detex.l:378-382 - inside \(...\) inline math
-    LaInclude,  // detex.l:403-408 - parsing \include{...} filename
-    LaMacro,    // detex.l:487-498 - consuming N brace-delimited arguments (KILLARGS)
-    LaOptArg,   // detex.l:497-498 - inside optional [...] arg for LaMacro
-    LaMacro2,   // detex.l:500-514 - consuming args but keeping last one (STRIPARGS)
-    LaOptArg2,  // detex.l:513-514 - inside optional [...] arg for LaMacro2
-    LaVerbatim, // detex.l:225-227 - inside verbatim environment, echoing content
-    LaPicture,  // detex.l:300-303 - parsing \includegraphics{...}
+    Input,       // detex.l:426-431 - parsing \input filename
+    Math,        // detex.l:396-401 - inside $...$ inline math
+    Control,     // detex.l:451-456 - after unknown \command
+    LaDisplay,   // detex.l:384-388 - inside \[...\] display math
+    LaEnd,       // detex.l:266-272 - inside \end{...} parsing env name
+    LaEnv,       // detex.l:262-264 - absorbing ignored environment content
+    LaFormula,   // detex.l:378-382 - inside \(...\) inline math
+    LaInclude,   // detex.l:403-408 - parsing \include{...} filename
+    LaMacro,     // detex.l:487-498 - consuming N brace-delimited arguments (KILLARGS)
+    LaOptArg,    // detex.l:497-498 - inside optional [...] arg for LaMacro
+    LaMacro2,    // detex.l:500-514 - consuming args but keeping last one (STRIPARGS)
+    LaOptArg2,   // detex.l:513-514 - inside optional [...] arg for LaMacro2
+    LaVerbatim,  // detex.l:225-227 - inside verbatim environment, echoing content
+    LaPicture,   // detex.l:300-303 - parsing \includegraphics{...}
 }
 
 /// File context for stack
@@ -850,7 +850,7 @@ impl<W: Write> Detex<W> {
                             self.next_char();
                         }
                         // detex.l:214 has IGNORE but document is special (LATEX; IGNORE)
-                    // detex.l:218-223 - \begin{verbatim}
+                        // detex.l:218-223 - \begin{verbatim}
                     } else if env == "verbatim" {
                         if self.begin_env("verbatim") {
                             self.state = State::LaEnv;
@@ -1272,8 +1272,8 @@ impl<W: Write> Detex<W> {
                 let _ = self.read_command_name();
                 self.ignore();
             }
-            Some(c) if c.is_ascii_alphanumeric() || c == '-' || c == '\'' || c == '=' || c == '`' => {
-            }
+            Some(c)
+                if c.is_ascii_alphanumeric() || c == '-' || c == '\'' || c == '=' || c == '`' => {}
             Some(c) => {
                 self.unget_char(c);
                 self.state = State::Normal;
