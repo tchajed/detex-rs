@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use walkdir::WalkDir;
+
+/// Mutex to ensure only one test builds opendetex at a time
+static BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Get the path to the detex-rs debug binary
 fn detex_rs_bin() -> PathBuf {
@@ -21,6 +25,10 @@ fn opendetex_bin() -> PathBuf {
 
 /// Ensure opendetex is built
 fn ensure_opendetex_built() {
+    // Acquire lock to prevent parallel builds
+    let lock = BUILD_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap();
+
     let opendetex_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("opendetex-2.8.11");
     let opendetex_bin = opendetex_bin();
 
