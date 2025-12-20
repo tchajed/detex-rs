@@ -8,19 +8,17 @@ static BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Get the path to the detex-rs debug binary
 fn detex_rs_bin() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("target");
-    path.push("debug");
-    path.push("detex-rs");
-    path
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("debug")
+        .join("detex-rs")
 }
 
 /// Get the path to the opendetex binary
 fn opendetex_bin() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("opendetex-2.8.11");
-    path.push("detex");
-    path
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("opendetex-2.8.11")
+        .join("detex")
 }
 
 /// Ensure opendetex is built
@@ -45,27 +43,23 @@ fn ensure_opendetex_built() {
 
 /// Run detex-rs on a file with optional flags and return the output
 fn run_detex_rs(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
-    let mut cmd = Command::new(detex_rs_bin());
-    cmd.current_dir(working_dir);
-    for flag in flags {
-        cmd.arg(flag);
-    }
-    cmd.arg(input_file);
-
-    let output = cmd.output().expect("Failed to run detex-rs");
+    let output = Command::new(detex_rs_bin())
+        .current_dir(working_dir)
+        .args(flags)
+        .arg(input_file)
+        .output()
+        .expect("Failed to run detex-rs");
     String::from_utf8(output.stdout).expect("detex-rs output was not valid UTF-8")
 }
 
 /// Run opendetex on a file with optional flags and return the output
 fn run_opendetex(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
-    let mut cmd = Command::new(opendetex_bin());
-    cmd.current_dir(working_dir);
-    for flag in flags {
-        cmd.arg(flag);
-    }
-    cmd.arg(input_file);
-
-    let output = cmd.output().expect("Failed to run opendetex");
+    let output = Command::new(opendetex_bin())
+        .current_dir(working_dir)
+        .args(flags)
+        .arg(input_file)
+        .output()
+        .expect("Failed to run opendetex");
     String::from_utf8(output.stdout).expect("opendetex output was not valid UTF-8")
 }
 
