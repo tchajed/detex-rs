@@ -102,7 +102,7 @@ impl<W: Write> Detex<W> {
 
     /// Process a file
     pub fn process_file(&mut self, filename: &str) -> Result<(), String> {
-        let (mut file, path) = tex_open(filename, &self.opts)
+        let (mut file, _path) = tex_open(filename, &self.opts)
             .ok_or_else(|| format!("can't open file {}", filename))?;
 
         let mut content = String::new();
@@ -110,7 +110,7 @@ impl<W: Write> Detex<W> {
             .map_err(|e| format!("error reading {}: {}", filename, e))?;
 
         let source = CharSource::new(content);
-        let name = path.to_string_lossy().to_string();
+        let name = filename.to_string();
 
         self.file_stack.push(FileContext { source, name });
         self.state = State::Normal;
@@ -353,7 +353,7 @@ impl<W: Write> Detex<W> {
         }
 
         match tex_open(filename, &self.opts) {
-            Some((mut file, path)) => {
+            Some((mut file, _path)) => {
                 let mut content = String::new();
                 if let Err(e) = file.read_to_string(&mut content) {
                     eprintln!("detex: warning: can't read file {}: {}", filename, e);
@@ -361,7 +361,7 @@ impl<W: Write> Detex<W> {
                 }
 
                 let source = CharSource::new(content);
-                let name = path.to_string_lossy().to_string();
+                let name = filename.to_string();
                 self.file_stack.push(FileContext { source, name });
                 Ok(())
             }

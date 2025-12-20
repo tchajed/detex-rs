@@ -36,8 +36,9 @@ fn ensure_opendetex_built() {
 }
 
 /// Run detex-rs on a file with optional flags and return the output
-fn run_detex_rs(input_file: &Path, flags: &[&str]) -> String {
+fn run_detex_rs(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
     let mut cmd = Command::new(detex_rs_bin());
+    cmd.current_dir(working_dir);
     for flag in flags {
         cmd.arg(flag);
     }
@@ -48,8 +49,9 @@ fn run_detex_rs(input_file: &Path, flags: &[&str]) -> String {
 }
 
 /// Run opendetex on a file with optional flags and return the output
-fn run_opendetex(input_file: &Path, flags: &[&str]) -> String {
+fn run_opendetex(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
     let mut cmd = Command::new(opendetex_bin());
+    cmd.current_dir(working_dir);
     for flag in flags {
         cmd.arg(flag);
     }
@@ -106,8 +108,11 @@ fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
         let test_name = test_file.file_name().unwrap().to_string_lossy();
         eprintln!("\nTesting: {} ({})", test_name, flags_display);
 
-        let detex_rs_output = run_detex_rs(&test_file, flags);
-        let opendetex_output = run_opendetex(&test_file, flags);
+        // Make the file path relative to the test directory
+        let relative_file = test_file.strip_prefix(&test_dir).unwrap();
+
+        let detex_rs_output = run_detex_rs(relative_file, flags, &test_dir);
+        let opendetex_output = run_opendetex(relative_file, flags, &test_dir);
 
         if opendetex_output != detex_rs_output {
             failures.push((test_name.to_string(), opendetex_output, detex_rs_output));
