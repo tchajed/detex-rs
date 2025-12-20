@@ -82,13 +82,14 @@ fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
 
     // Get all test files
     let test_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("latex_tests")
+        .join("tests")
+        .join("latex")
         .join(dir);
     let test_files = get_tex_files(&test_dir);
 
     assert!(
         !test_files.is_empty(),
-        "No test files found in latex_tests/{}",
+        "No test files found in tests/latex/{}",
         dir
     );
 
