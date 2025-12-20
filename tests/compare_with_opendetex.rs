@@ -170,3 +170,8 @@ fn test_complex_latex_files() {
 fn test_complex_latex_files_space_flag() {
     run_comparison_tests_in_dir(".", &["-s"]);
 }
+
+#[test]
+fn test_simple_latex_files_tabular_follow_cite_srcloc() {
+    run_comparison_tests_in_dir("simple", &["-e", "tabular", "-l", "-c", "-1"]);
+}

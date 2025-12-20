@@ -233,6 +233,10 @@ impl<W: Write> Detex<W> {
         }
         self.print_prefix();
         let _ = writeln!(self.output);
+        // detex.l:722 - fFileLines[csb]++; fIsColumn0=1;
+        if let Some(source) = self.current_source_mut() {
+            source.incr_line();
+        }
         self.at_column_zero = true;
     }
 
@@ -398,7 +402,14 @@ impl<W: Write> Detex<W> {
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek_char() {
             if c.is_whitespace() {
-                self.next_char();
+                let ch = self.next_char().unwrap();
+                // Track newlines in skipped whitespace
+                if ch == '\n' {
+                    if let Some(source) = self.current_source_mut() {
+                        source.incr_line();
+                    }
+                    self.at_column_zero = true;
+                }
             } else {
                 break;
             }
@@ -492,7 +503,22 @@ impl<W: Write> Detex<W> {
                     Some('{') => depth += 1,
                     Some('}') => depth -= 1,
                     Some('\\') => {
-                        self.next_char();
+                        // Skip the next character after backslash
+                        if let Some(ch) = self.next_char() {
+                            if ch == '\n' {
+                                if let Some(source) = self.current_source_mut() {
+                                    source.incr_line();
+                                }
+                                self.at_column_zero = true;
+                            }
+                        }
+                    }
+                    Some('\n') => {
+                        // Track newlines in skipped content
+                        if let Some(source) = self.current_source_mut() {
+                            source.incr_line();
+                        }
+                        self.at_column_zero = true;
                     }
                     Some(_) => {}
                     None => break,
@@ -510,7 +536,22 @@ impl<W: Write> Detex<W> {
                     Some('[') => depth += 1,
                     Some(']') => depth -= 1,
                     Some('\\') => {
-                        self.next_char();
+                        // Skip the next character after backslash
+                        if let Some(ch) = self.next_char() {
+                            if ch == '\n' {
+                                if let Some(source) = self.current_source_mut() {
+                                    source.incr_line();
+                                }
+                                self.at_column_zero = true;
+                            }
+                        }
+                    }
+                    Some('\n') => {
+                        // Track newlines in skipped content
+                        if let Some(source) = self.current_source_mut() {
+                            source.incr_line();
+                        }
+                        self.at_column_zero = true;
                     }
                     Some(_) => {}
                     None => break,
@@ -532,12 +573,20 @@ impl<W: Write> Detex<W> {
 
         match c {
             // detex.l:212 - <Normal>"%".*  - ignore comments
+            // The pattern includes "\n" which is consumed but not output
+            // detex.l:212 calls INCRLINENO which tracks newlines in matched text
             '%' => {
                 while let Some(c) = self.next_char() {
                     if c == '\n' {
+                        // Increment line for the consumed newline
+                        if let Some(source) = self.current_source_mut() {
+                            source.incr_line();
+                        }
+                        self.at_column_zero = true;
                         break;
                     }
                 }
+                self.ignore();
             }
 
             // Backslash commands handled in process_backslash
@@ -848,8 +897,15 @@ impl<W: Write> Detex<W> {
                     // detex.l:214 - \begin{document}
                     if env == "document" {
                         self.set_latex();
+                        // detex.l:214 - pattern is: "\\begin"{S}"{"{S}"document"{S}"}""\n"*
+                        // The "\n"* part consumes optional newlines
                         while self.peek_char() == Some('\n') {
                             self.next_char();
+                            // Track the consumed newline
+                            if let Some(source) = self.current_source_mut() {
+                                source.incr_line();
+                            }
+                            self.at_column_zero = true;
                         }
                         // detex.l:214 has IGNORE but document is special (LATEX; IGNORE)
                         // detex.l:218-223 - \begin{verbatim}
@@ -1358,15 +1414,35 @@ impl<W: Write> Detex<W> {
     }
 
     /// detex.l:262-264 - LaEnv state (absorbing ignored environment content)
-    /// <LaEnv>"\\end"   {LaBEGIN LaEnd; IGNORE;}
-    /// <LaEnv>"\n"+     ;
-    /// <LaEnv>.         {INCRLINENO;}
+    /// <LaEnv>"\\end"  {LaBEGIN LaEnd; IGNORE;}
+    /// <LaEnv>"\n"+    ;  (newlines are consumed but not processed)
+    /// <LaEnv>.        {INCRLINENO;}
     fn process_la_env(&mut self) -> Result<(), String> {
-        if let Some('\\') = self.next_char()
-            && self.try_match("end")
-        {
-            self.la_begin(State::LaEnd);
-            self.ignore();
+        match self.peek_char() {
+            Some('\\') => {
+                self.next_char();
+                if self.try_match("end") {
+                    self.la_begin(State::LaEnd);
+                    self.ignore();
+                } else {
+                    // Consumed '\' - track it (no newline)
+                }
+            }
+            Some('\n') => {
+                // detex.l:263 - newlines in ignored environments
+                self.next_char();
+                // Track the newline
+                if let Some(source) = self.current_source_mut() {
+                    source.incr_line();
+                }
+                self.at_column_zero = true;
+            }
+            Some(_) => {
+                // detex.l:264 - any other character calls INCRLINENO
+                // (though since we're consuming one char at a time, we only increment if it's '\n')
+                self.next_char();
+            }
+            None => {}
         }
         Ok(())
     }
@@ -1519,15 +1595,27 @@ impl<W: Write> Detex<W> {
                     self.args_count = self.args_count.saturating_sub(1);
                     if self.args_count == 0 {
                         // detex.l:489 - "}""\n"{0,1} - consume optional trailing newline
+                        // detex.l:489 calls INCRLINENO to track newlines in matched text
                         if self.peek_char() == Some('\n') {
                             self.next_char();
+                            if let Some(source) = self.current_source_mut() {
+                                source.incr_line();
+                            }
+                            self.at_column_zero = true;
                         }
                         self.state = State::Normal;
                     }
                 }
             }
             // detex.l:496 - <LaMacro>. - ignore all other characters
-            Some('\n') | Some(_) | None => {}
+            Some('\n') => {
+                // Track newlines in consumed content
+                if let Some(source) = self.current_source_mut() {
+                    source.incr_line();
+                }
+                self.at_column_zero = true;
+            }
+            Some(_) | None => {}
         }
         Ok(())
     }
@@ -1540,6 +1628,13 @@ impl<W: Write> Detex<W> {
             // detex.l:497
             Some(']') => self.state = State::LaMacro,
             // detex.l:498 - ignore everything else
+            Some('\n') => {
+                // Track newlines in consumed content
+                if let Some(source) = self.current_source_mut() {
+                    source.incr_line();
+                }
+                self.at_column_zero = true;
+            }
             Some(_) | None => {}
         }
         Ok(())
@@ -1575,6 +1670,13 @@ impl<W: Write> Detex<W> {
             // detex.l:511
             Some('}') => self.open_braces = self.open_braces.saturating_sub(1),
             // detex.l:512 - ignore all other characters
+            Some('\n') => {
+                // Track newlines in consumed content
+                if let Some(source) = self.current_source_mut() {
+                    source.incr_line();
+                }
+                self.at_column_zero = true;
+            }
             Some(_) | None => {}
         }
         Ok(())
@@ -1588,6 +1690,13 @@ impl<W: Write> Detex<W> {
             // detex.l:513
             Some(']') => self.state = State::LaMacro2,
             // detex.l:514 - ignore everything else
+            Some('\n') => {
+                // Track newlines in consumed content
+                if let Some(source) = self.current_source_mut() {
+                    source.incr_line();
+                }
+                self.at_column_zero = true;
+            }
             Some(_) | None => {}
         }
         Ok(())

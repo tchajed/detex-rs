@@ -129,14 +129,23 @@ impl CharSource {
             return None;
         };
 
+        // Note: line number is NOT automatically incremented here.
+        // The lexer is responsible for calling incr_line() when appropriate.
+        // See detex.l:743-751 IncrLineNo() and line 722 LineBreak()
         if c == '\n' {
-            self.line += 1;
             self.at_line_start = true;
         } else {
             self.at_line_start = false;
         }
 
         Some(c)
+    }
+
+    /// Increment line counter
+    /// detex.l:743-751 - IncrLineNo() increments for each '\n' consumed
+    pub fn incr_line(&mut self) {
+        self.line += 1;
+        self.at_line_start = true;
     }
 
     pub fn unget(&mut self, c: char) {
