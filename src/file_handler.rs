@@ -132,11 +132,7 @@ impl CharSource {
         // Note: line number is NOT automatically incremented here.
         // The lexer is responsible for calling incr_line() when appropriate.
         // See detex.l:743-751 IncrLineNo() and line 722 LineBreak()
-        if c == '\n' {
-            self.at_line_start = true;
-        } else {
-            self.at_line_start = false;
-        }
+        self.at_line_start = c == '\n';
 
         Some(c)
     }
