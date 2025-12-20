@@ -74,19 +74,19 @@ fn get_tex_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Generic test runner that compares outputs with optional flags
-fn run_comparison_tests(_test_name_suffix: &str, flags: &[&str]) {
+fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
     // Ensure opendetex is built before running tests
     ensure_opendetex_built();
 
     // Get all test files
     let test_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("latex_tests")
-        .join("simple");
+        .join(dir);
     let test_files = get_tex_files(&test_dir);
 
     assert!(
         !test_files.is_empty(),
-        "No test files found in latex_tests/simple"
+        "No test files found in latex_tests/{}", dir
     );
 
     let flags_display = if flags.is_empty() {
@@ -137,25 +137,35 @@ fn run_comparison_tests(_test_name_suffix: &str, flags: &[&str]) {
 
 #[test]
 fn test_simple_latex_files() {
-    run_comparison_tests("default", &[]);
+    run_comparison_tests_in_dir("simple", &[]);
 }
 
 #[test]
 fn test_simple_latex_files_cite_flag() {
-    run_comparison_tests("cite", &["-c"]);
+    run_comparison_tests_in_dir("simple", &["-c"]);
 }
 
 #[test]
 fn test_simple_latex_files_env_flag() {
-    run_comparison_tests("env", &["-e", "equation,verbatim"]);
+    run_comparison_tests_in_dir("simple", &["-e", "equation,verbatim"]);
 }
 
 #[test]
 fn test_simple_latex_files_math_flag() {
-    run_comparison_tests("math", &["-r"]);
+    run_comparison_tests_in_dir("simple", &["-r"]);
 }
 
 #[test]
 fn test_simple_latex_files_space_flag() {
-    run_comparison_tests("space", &["-s"]);
+    run_comparison_tests_in_dir("simple", &["-s"]);
+}
+
+#[test]
+fn test_complex_latex_files() {
+    run_comparison_tests_in_dir(".", &[]);
+}
+
+#[test]
+fn test_complex_latex_files_space_flag() {
+    run_comparison_tests_in_dir(".", &["-s"]);
 }
