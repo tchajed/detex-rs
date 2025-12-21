@@ -1,0 +1,17 @@
+% options are set later with \hypersetup
+\usepackage{hyperref}
+
+% code snippets with syntax highlighting
+\usepackage{minted}
+% Inconsolata doesn't have italics, so don't try to use them
+\AtBeginEnvironment{minted}{\let\itshape\relax}
+\usemintedstyle{tango}
+
+% use natbib to create bibliography
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{abbrv}
+
+\usepackage{xspace}
+
+%% Iris
+\usepackage{mathpartir}

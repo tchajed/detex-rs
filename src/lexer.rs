@@ -573,20 +573,18 @@ impl<W: Write> Detex<W> {
 
         match c {
             // detex.l:212 - <Normal>"%".*  - ignore comments
-            // The pattern includes "\n" which is consumed but not output
-            // detex.l:212 calls INCRLINENO which tracks newlines in matched text
+            // The pattern "%.*" does NOT include "\n" (regex . doesn't match newline)
+            // So we consume up to but NOT including the newline
+            // detex.l:212 calls INCRLINENO (NOT IGNORE) - no space output
             '%' => {
-                while let Some(c) = self.next_char() {
+                // Consume characters until newline (but don't consume the newline)
+                while let Some(c) = self.peek_char() {
                     if c == '\n' {
-                        // Increment line for the consumed newline
-                        if let Some(source) = self.current_source_mut() {
-                            source.incr_line();
-                        }
-                        self.at_column_zero = true;
                         break;
                     }
+                    self.next_char();
                 }
-                self.ignore();
+                // Note: opendetex calls INCRLINENO, not IGNORE, so no space is output
             }
 
             // Backslash commands handled in process_backslash
