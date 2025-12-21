@@ -1605,13 +1605,12 @@ impl<W: Write> Detex<W> {
                     }
                 }
             }
-            // detex.l:496 - <LaMacro>. - ignore all other characters
+            // In LaMacro state, '.' matches any character except newline.
+            // Newlines are NOT matched by any explicit rule in detex.l,
+            // so they fall through to the default ECHO action.
             Some('\n') => {
-                // Track newlines in consumed content
-                if let Some(source) = self.current_source_mut() {
-                    source.incr_line();
-                }
-                self.at_column_zero = true;
+                // Output the newline (default ECHO behavior in flex)
+                self.newline();
             }
             Some(_) | None => {}
         }
