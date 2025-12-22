@@ -33,14 +33,17 @@ trap "rm -f $DETEX_RS_OUT $DETEX_RS_ERR $OPENDETEX_OUT $OPENDETEX_ERR" EXIT
 # Run opendetex
 "$OPENDETEX_BIN" "$@" >"$OPENDETEX_OUT" 2>"$OPENDETEX_ERR"
 
-# Compare stdout
+# Compare stdout and stderr
+
+diff_found=false
 if ! diff -u "$OPENDETEX_OUT" "$DETEX_RS_OUT"; then
-  echo "stdout differs!"
-  exit 1
+  diff_found=true
+fi
+if ! diff -u "$OPENDETEX_ERR" "$DETEX_RS_ERR"; then
+    echo "stderr differs" 1>&2
+    diff_found=true
 fi
 
-# Compare stderr
-if ! diff -u "$OPENDETEX_ERR" "$DETEX_RS_ERR"; then
-  echo "stderr differs!"
-  exit 1
+if [ "$diff_found" = true ]; then
+    exit 1
 fi
