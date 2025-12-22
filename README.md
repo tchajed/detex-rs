@@ -20,9 +20,8 @@ A large bug fix (in handling -s) came from this prompt:
 cargo build
 ```
 
-To run the tests, you need the flex library (`apt install libfl-dev` on Ubuntu) in order to compile opendetex for comparison:
+To run the tests, you need the flex library (`apt install libfl-dev` on Ubuntu) in order to compile opendetex for comparison (the tests will compile it automatically with `make -C opendetex-2.8.11`).
 
 ```
-make -C opendetex-2.8.11 detex
 cargo test
 ```
