@@ -1593,31 +1593,37 @@ impl<W: Write> Detex<W> {
             Some('[') => self.state = State::LaOptArg,
             // detex.l:488
             Some('{') => self.open_braces += 1,
-            // detex.l:489-495
+            // detex.l:489-495 - pattern "}""\n"{0,1}
             Some('}') => {
                 self.open_braces = self.open_braces.saturating_sub(1);
+
+                // detex.l:489 - pattern "}""\n"{0,1} always tries to consume optional newline
+                // INCRLINENO is called on the matched text (which may or may not have newline)
+                if self.peek_char() == Some('\n') {
+                    self.next_char();
+                    // INCRLINENO: if there's a newline, increment line and set at_column_zero
+                    if let Some(source) = self.current_source_mut() {
+                        source.incr_line();
+                    }
+                    self.at_column_zero = true;
+                }
+
+                // Check if done with current argument group and all arguments
                 if self.open_braces == 0 {
                     self.args_count = self.args_count.saturating_sub(1);
                     if self.args_count == 0 {
-                        // detex.l:489 - "}""\n"{0,1} - consume optional trailing newline
-                        // detex.l:489 calls INCRLINENO to track newlines in matched text
-                        if self.peek_char() == Some('\n') {
-                            self.next_char();
-                            if let Some(source) = self.current_source_mut() {
-                                source.incr_line();
-                            }
-                            self.at_column_zero = true;
-                        }
                         self.state = State::Normal;
                     }
                 }
             }
             // In LaMacro state, '.' matches any character except newline.
             // Newlines are NOT matched by any explicit rule in detex.l,
-            // so they fall through to the default ECHO action.
+            // so they fall through to the default ECHO action which outputs
+            // the character but does NOT increment line numbers.
             Some('\n') => {
-                // Output the newline (default ECHO behavior in flex)
-                self.newline();
+                // ECHO behavior: output with prefix if at column zero, but don't
+                // increment line number or set at_column_zero afterward
+                self.echo('\n');
             }
             Some(_) | None => {}
         }
