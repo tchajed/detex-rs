@@ -338,7 +338,7 @@ impl<W: Write> Detex<W> {
         if !in_include_list(filename, &self.opts) {
             return Ok(());
         }
-        self.input_file(filename)
+        self.open_file(filename, "\\include")
     }
 
     /// detex.l:821-840 InputFile() - push current file and open new one
@@ -346,7 +346,11 @@ impl<W: Write> Detex<W> {
         if self.opts.no_follow {
             return Ok(());
         }
+        self.open_file(filename, "\\input")
+    }
 
+    /// Common implementation for input_file and include_file
+    fn open_file(&mut self, filename: &str, command: &str) -> Result<(), String> {
         if self.file_stack.len() >= MAX_FILE_STACK {
             eprintln!("detex: warning: file stack overflow, ignoring {}", filename);
             return Ok(());
@@ -366,7 +370,10 @@ impl<W: Write> Detex<W> {
                 Ok(())
             }
             None => {
-                eprintln!("detex: warning: can't open file {}", filename);
+                eprintln!(
+                    "detex: warning: can't open {} file {}",
+                    command, filename
+                );
                 Ok(())
             }
         }

@@ -41,26 +41,30 @@ fn ensure_opendetex_built() {
     }
 }
 
-/// Run detex-rs on a file with optional flags and return the output
-fn run_detex_rs(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
+/// Run detex-rs on a file with optional flags and return the output (stdout, stderr)
+fn run_detex_rs(input_file: &Path, flags: &[&str], working_dir: &Path) -> (String, String) {
     let output = Command::new(detex_rs_bin())
         .current_dir(working_dir)
         .args(flags)
         .arg(input_file)
         .output()
         .expect("Failed to run detex-rs");
-    String::from_utf8(output.stdout).expect("detex-rs output was not valid UTF-8")
+    let stdout = String::from_utf8(output.stdout).expect("detex-rs stdout was not valid UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("detex-rs stderr was not valid UTF-8");
+    (stdout, stderr)
 }
 
-/// Run opendetex on a file with optional flags and return the output
-fn run_opendetex(input_file: &Path, flags: &[&str], working_dir: &Path) -> String {
+/// Run opendetex on a file with optional flags and return the output (stdout, stderr)
+fn run_opendetex(input_file: &Path, flags: &[&str], working_dir: &Path) -> (String, String) {
     let output = Command::new(opendetex_bin())
         .current_dir(working_dir)
         .args(flags)
         .arg(input_file)
         .output()
         .expect("Failed to run opendetex");
-    String::from_utf8(output.stdout).expect("opendetex output was not valid UTF-8")
+    let stdout = String::from_utf8(output.stdout).expect("opendetex stdout was not valid UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("opendetex stderr was not valid UTF-8");
+    (stdout, stderr)
 }
 
 /// Get all .tex files in a directory (recursively)
@@ -114,11 +118,20 @@ fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
         // Make the file path relative to the test directory
         let relative_file = test_file.strip_prefix(&test_dir).unwrap();
 
-        let detex_rs_output = run_detex_rs(relative_file, flags, &test_dir);
-        let opendetex_output = run_opendetex(relative_file, flags, &test_dir);
+        let (detex_rs_stdout, detex_rs_stderr) = run_detex_rs(relative_file, flags, &test_dir);
+        let (opendetex_stdout, opendetex_stderr) = run_opendetex(relative_file, flags, &test_dir);
 
-        if opendetex_output != detex_rs_output {
-            failures.push((test_name.to_string(), opendetex_output, detex_rs_output));
+        let stdout_matches = opendetex_stdout == detex_rs_stdout;
+        let stderr_matches = opendetex_stderr == detex_rs_stderr;
+
+        if !stdout_matches || !stderr_matches {
+            failures.push((
+                test_name.to_string(),
+                opendetex_stdout,
+                detex_rs_stdout,
+                opendetex_stderr,
+                detex_rs_stderr,
+            ));
             eprintln!("  ✗ Failed");
         } else {
             eprintln!("  ✓ Passed");
@@ -133,11 +146,24 @@ fn run_comparison_tests_in_dir(dir: &str, flags: &[&str]) {
             flags_display
         );
 
-        for (test_name, opendetex_output, detex_rs_output) in failures {
-            error_msg.push_str(&format!(
-                "\n--- {} ---\n\nOpendetex output:\n{}\n\ndetex-rs output:\n{}\n",
-                test_name, opendetex_output, detex_rs_output
-            ));
+        for (test_name, opendetex_stdout, detex_rs_stdout, opendetex_stderr, detex_rs_stderr) in
+            failures
+        {
+            error_msg.push_str(&format!("\n--- {} ---\n", test_name));
+
+            if opendetex_stdout != detex_rs_stdout {
+                error_msg.push_str(&format!(
+                    "\nstdout differs:\n\nOpendetex stdout:\n{}\n\ndetex-rs stdout:\n{}\n",
+                    opendetex_stdout, detex_rs_stdout
+                ));
+            }
+
+            if opendetex_stderr != detex_rs_stderr {
+                error_msg.push_str(&format!(
+                    "\nstderr differs:\n\nOpendetex stderr:\n{}\n\ndetex-rs stderr:\n{}\n",
+                    opendetex_stderr, detex_rs_stderr
+                ));
+            }
         }
 
         panic!("{}", error_msg);
