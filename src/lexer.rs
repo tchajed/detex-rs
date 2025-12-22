@@ -370,10 +370,7 @@ impl<W: Write> Detex<W> {
                 Ok(())
             }
             None => {
-                eprintln!(
-                    "detex: warning: can't open {} file {}",
-                    command, filename
-                );
+                eprintln!("detex: warning: can't open {} file {}", command, filename);
                 Ok(())
             }
         }
