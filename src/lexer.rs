@@ -730,9 +730,23 @@ impl<W: Write> Detex<W> {
             }
 
             // detex.l:485 - <Normal>("\t")+ - tabs
+            // In flex, single tab is matched by '.' rule (line 483) which calls ECHO (with prefix)
+            // Multiple consecutive tabs are matched by ("\t")+ (line 485) which calls putchar('\t')
+            // Since '.' appears before ("\t")+ in the flex file, and both match 1 char for single tab,
+            // '.' wins for single tab. For multiple tabs, ("\t")+ wins due to longer match.
             '\t' => {
                 if !self.opts.word {
-                    let _ = write!(self.output, "\t");
+                    // Check if there are more tabs following (multiple consecutive tabs)
+                    if self.peek_char() == Some('\t') {
+                        // Multiple tabs: consume all, output one tab without prefix (detex.l:485)
+                        while self.peek_char() == Some('\t') {
+                            self.next_char();
+                        }
+                        let _ = write!(self.output, "\t");
+                    } else {
+                        // Single tab: matched by '.' in flex, so use ECHO (with prefix) (detex.l:483)
+                        self.echo('\t');
+                    }
                 }
             }
 
