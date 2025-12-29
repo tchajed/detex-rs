@@ -7,7 +7,7 @@ set -eu
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DETEX_RS_BIN="$SCRIPT_DIR/../target/debug/detex-rs"
+DETEX_RS_BIN="$SCRIPT_DIR/../target/debug/detex"
 OPENDETEX_DIR="$SCRIPT_DIR/../opendetex-2.8.11"
 OPENDETEX_BIN="$OPENDETEX_DIR/detex"
 

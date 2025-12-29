@@ -1,5 +1,5 @@
 [package]
-name = "detex-rs"
+name = "detex"
 version = "0.1.0"
 edition = "2024"
 description = "Strip TeX/LaTeX commands from input files"

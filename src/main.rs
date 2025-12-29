@@ -1,7 +1,7 @@
 use std::io::{self, BufWriter};
 use std::process;
 
-use detex_rs::{Detex, Options};
+use detex::{Detex, Options};
 
 const VERSION: &str = "0.1.0";
 

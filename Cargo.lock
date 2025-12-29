@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "detex-rs"
+name = "detex"
 version = "0.1.0"
 dependencies = [
  "walkdir",

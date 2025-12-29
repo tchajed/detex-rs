@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```
-//! use detex_rs::{Detex, Options};
+//! use detex::{Detex, Options};
 //!
 //! let opts = Options::default();
 //! let mut output = Vec::new();
