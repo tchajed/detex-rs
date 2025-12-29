@@ -18,5 +18,5 @@ mod config;
 mod file_handler;
 mod lexer;
 
-pub use config::{Options, VERSION};
+pub use config::Options;
 pub use lexer::Detex;

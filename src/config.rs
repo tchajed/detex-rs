@@ -25,9 +25,6 @@ pub const DEFAULT_ENV: &str = "algorithm,align,array,bmatrix,displaymath,eqnarra
 /// Environment list separator
 pub const ENV_SEP: char = ',';
 
-/// Program version
-pub const VERSION: &str = "2.9.0";
-
 /// Command-line options
 #[derive(Debug, Clone)]
 pub struct Options {

@@ -1,7 +1,9 @@
 use std::io::{self, BufWriter};
 use std::process;
 
-use detex_rs::{Detex, Options, VERSION};
+use detex_rs::{Detex, Options};
+
+const VERSION: &str = "0.1.0";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

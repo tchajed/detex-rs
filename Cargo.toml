@@ -1,6 +1,6 @@
 [package]
 name = "detex-rs"
-version = "2.9.0"
+version = "0.1.0"
 edition = "2024"
 description = "Strip TeX/LaTeX commands from input files"
 license = "BSD-3-Clause"
