@@ -11,7 +11,7 @@ fn detex_rs_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("debug")
-        .join("detex-rs")
+        .join("detex")
 }
 
 /// Get the path to the opendetex binary
