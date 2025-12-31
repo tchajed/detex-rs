@@ -52,6 +52,8 @@ pub struct Options {
     pub include_list: Vec<String>,
     /// Input search paths
     pub input_paths: Vec<String>,
+    /// Suppress warnings
+    pub suppress_warnings: bool,
 }
 
 impl Default for Options {
@@ -69,6 +71,7 @@ impl Default for Options {
             env_ignore: DEFAULT_ENV.split(ENV_SEP).map(String::from).collect(),
             include_list: Vec::new(),
             input_paths: Vec::new(),
+            suppress_warnings: false,
         }
     }
 }

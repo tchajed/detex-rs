@@ -360,7 +360,9 @@ impl<W: Write> Detex<W> {
             Some((mut file, _path)) => {
                 let mut content = String::new();
                 if let Err(e) = file.read_to_string(&mut content) {
-                    eprintln!("detex: warning: can't read file {}: {}", filename, e);
+                    if !self.opts.suppress_warnings {
+                        eprintln!("detex: warning: can't read file {}: {}", filename, e);
+                    }
                     return Ok(());
                 }
 
@@ -370,7 +372,9 @@ impl<W: Write> Detex<W> {
                 Ok(())
             }
             None => {
-                eprintln!("detex: warning: can't open {} file {}", command, filename);
+                if !self.opts.suppress_warnings {
+                    eprintln!("detex: warning: can't open {} file {}", command, filename);
+                }
                 Ok(())
             }
         }
