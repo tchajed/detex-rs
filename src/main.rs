@@ -3,7 +3,7 @@ use std::process;
 
 use detex::{Detex, Options};
 
-const VERSION: &str = "0.1.0";
+const VERSION: &str = "0.2.0";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
