@@ -1,10 +1,30 @@
-# detex-rs
-
 [![CI](https://github.com/tchajed/detex-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/tchajed/detex-rs/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/detex.svg)](https://crates.io/crates/detex)
+[![Documentation](https://docs.rs/detex/badge.svg)](https://docs.rs/detex/)
 
 Port of [opendetex](https://github.com/pkubowicz/opendetex) to Rust using LLMs.
 
-Note that the library and binary are called detex. This Rust port is not 100% compatible with opendetex, but it is close enough to use for counting words written in LaTeX.
+This Rust port is not 100% compatible with opendetex: the remaining differences are primarily handling of whitespace and line counting.
+
+## Building
+
+You can use detex-rs as a library or as a binary with the same interface as C detex.
+
+```sh
+cargo build -r
+```
+
+This builds a binary called `detex`. opendetex also has a copy of the binary called `delatex` which is the same as `detex -l`, which detex-rs does not implement.
+
+To run the tests, you need the flex library (`apt install libfl-dev` on Ubuntu) in order to compile opendetex for comparison (the tests will compile it automatically with `make -C opendetex-2.8.11`).
+
+```sh
+cargo test
+```
+
+## Development
+
+This project was almost entirely written using Claude, but with careful prompting to fix compatibility issues. The main manual work was creating and releasing the crate, and writing this README.
 
 Claude Opus 4.5 did the majority of the work with this prompt, along with detex's `detex.l` (written in flex, a lexer generator, but largely C code) and `detex.h`:
 
@@ -16,14 +36,6 @@ A large bug fix (in handling -s) came from this prompt:
 
 > Read detex.l and lexer.rs and make sure they line up exactly. Add comments to lexer.rs along the way citing the correspondence. Change lexer.rs as needed.
 
-## Building
+Claude wrote the test harness, which compares the Rust and C versions, as well as some initial tests without any detailed instructions.
 
-```
-cargo build
-```
-
-To run the tests, you need the flex library (`apt install libfl-dev` on Ubuntu) in order to compile opendetex for comparison (the tests will compile it automatically with `make -C opendetex-2.8.11`).
-
-```
-cargo test
-```
+After that, there were several rounds of adding a new failing test (based on a real writing project, which unfortunately is private because it's a grant proposal) and asking Claude to fix it.
